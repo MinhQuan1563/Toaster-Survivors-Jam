@@ -1,0 +1,518 @@
+import Phaser from "phaser";
+
+// ──────────────────────────────────────────────
+// TOASTER SURVIVORS: Breakfast Protocol
+// ──────────────────────────────────────────────
+
+const WORLD_W = 2000;
+const WORLD_H = 2000;
+
+// Upgrade definitions
+interface Upgrade {
+  key: string;
+  label: string;
+  description: string;
+  apply: (scene: GameScene) => void;
+  canApply: (scene: GameScene) => boolean;
+}
+
+const UPGRADES: Upgrade[] = [
+  {
+    key: "maxhp",
+    label: "+Max HP",
+    description: "+20 Integrity",
+    apply: (s) => { s.maxHp += 20; s.hp = Math.min(s.hp + 20, s.maxHp); },
+    canApply: () => true,
+  },
+  {
+    key: "speed",
+    label: "+Move Speed",
+    description: "+30 Speed",
+    apply: (s) => { s.playerSpeed += 30; },
+    canApply: () => true,
+  },
+  {
+    key: "pickup",
+    label: "+Pickup Radius",
+    description: "+20 Pickup",
+    apply: (s) => { s.pickupRadius += 20; },
+    canApply: () => true,
+  },
+  {
+    key: "toastlvl",
+    label: "BurntToast Lvl+",
+    description: "+2 dmg, -0.05s cd",
+    apply: (s) => {
+      s.toastLevel++;
+      s.toastDmg += 2;
+      s.toastCooldown = Math.max(0.25, s.toastCooldown - 0.05);
+    },
+    canApply: (s) => s.toastLevel < 5,
+  },
+];
+
+export default class GameScene extends Phaser.Scene {
+  // Player stats
+  hp = 100;
+  maxHp = 100;
+  playerSpeed = 200;
+  pickupRadius = 80;
+  toastLevel = 1;
+  toastDmg = 10;
+  toastCooldown = 0.6;
+
+  // XP / leveling
+  xp = 0;
+  xpToNext = 10;
+  level = 1;
+
+  // Spawn
+  spawnTimer = 0;
+  spawnInterval = 1.5; // seconds
+  elapsed = 0;
+
+  // Weapon timer
+  weaponTimer = 0;
+
+  // Game state
+  gameOver = false;
+  paused = false;
+  iFrameTimer = 0;
+
+  // Game objects
+  player!: Phaser.Physics.Arcade.Sprite;
+  enemies!: Phaser.Physics.Arcade.Group;
+  bullets!: Phaser.Physics.Arcade.Group;
+  orbs!: Phaser.Physics.Arcade.Group;
+  cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  wasd!: { W: Phaser.Input.Keyboard.Key; A: Phaser.Input.Keyboard.Key; S: Phaser.Input.Keyboard.Key; D: Phaser.Input.Keyboard.Key };
+
+  // UI
+  hpText!: Phaser.GameObjects.Text;
+  hpBar!: Phaser.GameObjects.Graphics;
+  xpBar!: Phaser.GameObjects.Graphics;
+  timerText!: Phaser.GameObjects.Text;
+  levelText!: Phaser.GameObjects.Text;
+  gameOverText!: Phaser.GameObjects.Text;
+  levelUpContainer!: Phaser.GameObjects.Container;
+
+  // Floor
+  floor!: Phaser.GameObjects.TileSprite;
+
+  constructor() {
+    super({ key: "GameScene" });
+  }
+
+  preload() {
+    // Generate all textures procedurally
+    this.createTextures();
+  }
+
+  createTextures() {
+    const g = this.make.graphics({ x: 0, y: 0 });
+
+    // Player: Toaster (32x32)
+    g.clear();
+    g.fillStyle(0xc0c0c0);
+    g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x808080);
+    g.fillRect(4, 2, 10, 14);
+    g.fillRect(18, 2, 10, 14);
+    g.fillStyle(0xff6600);
+    g.fillRect(6, 4, 6, 8);
+    g.fillRect(20, 4, 6, 8);
+    // lever
+    g.fillStyle(0x333333);
+    g.fillRect(14, 18, 4, 12);
+    g.generateTexture("toaster", 32, 32);
+
+    // Enemy: Mouse (20x20)
+    g.clear();
+    g.fillStyle(0x888888);
+    g.fillCircle(10, 12, 8);
+    // ears
+    g.fillStyle(0xffaaaa);
+    g.fillCircle(4, 4, 4);
+    g.fillCircle(16, 4, 4);
+    // tail
+    g.lineStyle(2, 0x888888);
+    g.lineBetween(10, 20, 10, 26);
+    g.generateTexture("mouse", 20, 28);
+
+    // Bullet: BurntToast (12x12)
+    g.clear();
+    g.fillStyle(0x8b4513);
+    g.fillRoundedRect(0, 0, 12, 12, 2);
+    g.fillStyle(0x222222);
+    g.fillRect(2, 2, 3, 3);
+    g.fillRect(7, 6, 3, 3);
+    g.generateTexture("toast", 12, 12);
+
+    // XP Orb: Screw (10x10)
+    g.clear();
+    g.fillStyle(0x00ffaa);
+    g.fillCircle(5, 5, 5);
+    g.fillStyle(0x00cc88);
+    g.fillRect(3, 4, 4, 2);
+    g.generateTexture("screw", 10, 10);
+
+    // Floor tile (64x64)
+    g.clear();
+    g.fillStyle(0xf5e6c8);
+    g.fillRect(0, 0, 64, 64);
+    g.lineStyle(1, 0xe0d0b0);
+    g.strokeRect(0, 0, 64, 64);
+    g.strokeRect(0, 0, 32, 32);
+    g.generateTexture("floor", 64, 64);
+
+    g.destroy();
+  }
+
+  create() {
+    // Reset state
+    this.hp = 100; this.maxHp = 100; this.playerSpeed = 200;
+    this.pickupRadius = 80; this.toastLevel = 1; this.toastDmg = 10;
+    this.toastCooldown = 0.6; this.xp = 0; this.xpToNext = 10;
+    this.level = 1; this.spawnTimer = 0; this.spawnInterval = 1.5;
+    this.elapsed = 0; this.weaponTimer = 0; this.gameOver = false;
+    this.paused = false; this.iFrameTimer = 0;
+
+    // World bounds
+    this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
+
+    // Floor
+    this.floor = this.add.tileSprite(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, "floor");
+
+    // Player
+    this.player = this.physics.add.sprite(WORLD_W / 2, WORLD_H / 2, "toaster");
+    this.player.setCollideWorldBounds(true);
+    this.player.setDepth(10);
+
+    // Groups
+    this.enemies = this.physics.add.group({ runChildUpdate: false });
+    this.bullets = this.physics.add.group({ runChildUpdate: false });
+    this.orbs = this.physics.add.group({ runChildUpdate: false });
+
+    // Camera
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+    // Input
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasd = {
+      W: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      A: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      S: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
+
+    // Collisions
+    this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitEnemy as any, undefined, this);
+    this.physics.add.overlap(this.player, this.enemies, this.onPlayerHitEnemy as any, undefined, this);
+    this.physics.add.overlap(this.player, this.orbs, this.onPickupOrb as any, undefined, this);
+
+    // UI (fixed to camera)
+    this.createUI();
+
+    // R to restart
+    this.input.keyboard!.on("keydown-R", () => {
+      if (this.gameOver) this.scene.restart();
+    });
+  }
+
+  createUI() {
+    const cam = this.cameras.main;
+
+    this.hpBar = this.add.graphics().setScrollFactor(0).setDepth(100);
+    this.xpBar = this.add.graphics().setScrollFactor(0).setDepth(100);
+
+    this.hpText = this.add.text(16, 16, "", {
+      fontSize: "14px", color: "#ffffff",
+      fontFamily: "monospace",
+      stroke: "#000000", strokeThickness: 3,
+    }).setScrollFactor(0).setDepth(101);
+
+    this.timerText = this.add.text(cam.width - 16, 16, "00:00", {
+      fontSize: "16px", color: "#ffffff",
+      fontFamily: "monospace",
+      stroke: "#000000", strokeThickness: 3,
+    }).setScrollFactor(0).setDepth(101).setOrigin(1, 0);
+
+    this.levelText = this.add.text(cam.width / 2, 16, "Lv.1", {
+      fontSize: "14px", color: "#ffdd00",
+      fontFamily: "monospace",
+      stroke: "#000000", strokeThickness: 3,
+    }).setScrollFactor(0).setDepth(101).setOrigin(0.5, 0);
+
+    this.gameOverText = this.add.text(cam.width / 2, cam.height / 2, "", {
+      fontSize: "32px", color: "#ff4444",
+      fontFamily: "monospace",
+      stroke: "#000000", strokeThickness: 4,
+      align: "center",
+    }).setScrollFactor(0).setDepth(200).setOrigin(0.5);
+
+    // Level up container (hidden by default)
+    this.levelUpContainer = this.add.container(0, 0).setScrollFactor(0).setDepth(200).setVisible(false);
+  }
+
+  update(_time: number, delta: number) {
+    if (this.gameOver || this.paused) return;
+
+    const dt = delta / 1000;
+    this.elapsed += dt;
+
+    // Player movement
+    this.movePlayer();
+
+    // Spawn enemies
+    this.spawnTimer += dt;
+    // Difficulty: spawn interval decreases over time
+    const currentInterval = Math.max(0.3, this.spawnInterval - this.elapsed * 0.01);
+    if (this.spawnTimer >= currentInterval) {
+      this.spawnTimer = 0;
+      this.spawnEnemy();
+    }
+
+    // Chase player
+    this.enemies.getChildren().forEach((e) => {
+      const enemy = e as Phaser.Physics.Arcade.Sprite;
+      if (!enemy.active) return;
+      this.physics.moveToObject(enemy, this.player, (enemy.getData("speed") as number) || 90);
+    });
+
+    // Auto-attack
+    this.weaponTimer += dt;
+    if (this.weaponTimer >= this.toastCooldown) {
+      this.weaponTimer = 0;
+      this.fireToast();
+    }
+
+    // Clean up off-screen bullets
+    this.bullets.getChildren().forEach((b) => {
+      const bullet = b as Phaser.Physics.Arcade.Sprite;
+      if (!bullet.active) return;
+      if (bullet.x < -50 || bullet.x > WORLD_W + 50 || bullet.y < -50 || bullet.y > WORLD_H + 50) {
+        bullet.destroy();
+      }
+    });
+
+    // iFrame cooldown
+    if (this.iFrameTimer > 0) this.iFrameTimer -= dt;
+
+    // Auto-pickup orbs in radius
+    this.orbs.getChildren().forEach((o) => {
+      const orb = o as Phaser.Physics.Arcade.Sprite;
+      if (!orb.active) return;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, orb.x, orb.y);
+      if (dist < this.pickupRadius) {
+        this.physics.moveToObject(orb, this.player, 300);
+      }
+    });
+
+    // Update UI
+    this.updateUI();
+  }
+
+  movePlayer() {
+    let vx = 0, vy = 0;
+    if (this.cursors.left.isDown || this.wasd.A.isDown) vx = -1;
+    if (this.cursors.right.isDown || this.wasd.D.isDown) vx = 1;
+    if (this.cursors.up.isDown || this.wasd.W.isDown) vy = -1;
+    if (this.cursors.down.isDown || this.wasd.S.isDown) vy = 1;
+
+    const len = Math.sqrt(vx * vx + vy * vy) || 1;
+    this.player.setVelocity((vx / len) * this.playerSpeed, (vy / len) * this.playerSpeed);
+  }
+
+  spawnEnemy() {
+    // Spawn off-screen around the player
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 500;
+    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, WORLD_W - 20);
+    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, WORLD_H - 20);
+
+    const enemy = this.physics.add.sprite(x, y, "mouse");
+    // Scale hp with time
+    const hpBonus = Math.floor(this.elapsed * 0.3);
+    enemy.setData("hp", 10 + hpBonus);
+    enemy.setData("speed", 90);
+    enemy.setData("dmg", 5);
+    this.enemies.add(enemy);
+  }
+
+  fireToast() {
+    // Find nearest enemy
+    let nearest: Phaser.Physics.Arcade.Sprite | null = null;
+    let nearDist = Infinity;
+    this.enemies.getChildren().forEach((e) => {
+      const enemy = e as Phaser.Physics.Arcade.Sprite;
+      if (!enemy.active) return;
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+      if (d < nearDist) { nearDist = d; nearest = enemy; }
+    });
+    if (!nearest) return;
+
+    const bullet = this.physics.add.sprite(this.player.x, this.player.y, "toast");
+    bullet.setData("dmg", this.toastDmg);
+    this.bullets.add(bullet);
+    this.physics.moveToObject(bullet, nearest, 400);
+
+    // Auto-destroy after 3s
+    this.time.delayedCall(3000, () => { if (bullet.active) bullet.destroy(); });
+  }
+
+  onBulletHitEnemy(bullet: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite) {
+    const dmg = bullet.getData("dmg") as number;
+    let ehp = enemy.getData("hp") as number;
+    ehp -= dmg;
+    bullet.destroy();
+
+    if (ehp <= 0) {
+      // Drop XP orb
+      const orb = this.physics.add.sprite(enemy.x, enemy.y, "screw");
+      orb.setData("xp", 1);
+      this.orbs.add(orb);
+      // Re-add overlap for new orb
+      this.physics.add.overlap(this.player, orb, this.onPickupOrb as any, undefined, this);
+      enemy.destroy();
+    } else {
+      enemy.setData("hp", ehp);
+      // Flash white
+      enemy.setTintFill(0xffffff);
+      this.time.delayedCall(80, () => { if (enemy.active) enemy.clearTint(); });
+    }
+  }
+
+  onPlayerHitEnemy(_player: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite) {
+    if (this.iFrameTimer > 0) return;
+    const dmg = (enemy.getData("dmg") as number) || 5;
+    this.hp -= dmg;
+    this.iFrameTimer = 0.5; // 0.5s invincibility
+
+    // Flash player red
+    this.player.setTintFill(0xff0000);
+    this.time.delayedCall(100, () => { if (this.player.active) this.player.clearTint(); });
+
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.doGameOver();
+    }
+  }
+
+  onPickupOrb(_player: Phaser.Physics.Arcade.Sprite, orb: Phaser.Physics.Arcade.Sprite) {
+    const xpVal = (orb.getData("xp") as number) || 1;
+    this.xp += xpVal;
+    orb.destroy();
+
+    if (this.xp >= this.xpToNext) {
+      this.xp -= this.xpToNext;
+      this.level++;
+      this.xpToNext = Math.floor(this.xpToNext * 1.5);
+      this.showLevelUp();
+    }
+  }
+
+  showLevelUp() {
+    this.paused = true;
+    this.physics.pause();
+
+    // Pick 3 random upgrades
+    const available = UPGRADES.filter((u) => u.canApply(this));
+    const picks: Upgrade[] = [];
+    const pool = [...available];
+    while (picks.length < 3 && pool.length > 0) {
+      const idx = Math.floor(Math.random() * pool.length);
+      picks.push(pool.splice(idx, 1)[0]);
+    }
+
+    // Build UI
+    this.levelUpContainer.removeAll(true);
+    const cam = this.cameras.main;
+    const cx = cam.width / 2;
+    const cy = cam.height / 2;
+
+    // Dim overlay
+    const overlay = this.add.graphics().setScrollFactor(0);
+    overlay.fillStyle(0x000000, 0.7);
+    overlay.fillRect(0, 0, cam.width, cam.height);
+    this.levelUpContainer.add(overlay);
+
+    const title = this.add.text(cx, cy - 120, `LEVEL UP! (Lv.${this.level})`, {
+      fontSize: "24px", color: "#ffdd00",
+      fontFamily: "monospace",
+      stroke: "#000000", strokeThickness: 4,
+    }).setOrigin(0.5).setScrollFactor(0);
+    this.levelUpContainer.add(title);
+
+    picks.forEach((upgrade, i) => {
+      const by = cy - 40 + i * 70;
+      const bg = this.add.graphics().setScrollFactor(0);
+      bg.fillStyle(0x444444, 0.9);
+      bg.fillRoundedRect(cx - 140, by - 20, 280, 55, 8);
+      bg.lineStyle(2, 0xffdd00);
+      bg.strokeRoundedRect(cx - 140, by - 20, 280, 55, 8);
+      this.levelUpContainer.add(bg);
+
+      const txt = this.add.text(cx, by, `${upgrade.label}\n${upgrade.description}`, {
+        fontSize: "14px", color: "#ffffff",
+        fontFamily: "monospace",
+        align: "center",
+      }).setOrigin(0.5, 0).setScrollFactor(0);
+      this.levelUpContainer.add(txt);
+
+      // Make interactive zone
+      const zone = this.add.zone(cx, by + 10, 280, 55).setScrollFactor(0).setInteractive({ useHandCursor: true });
+      zone.on("pointerover", () => bg.clear().fillStyle(0x666600, 0.9).fillRoundedRect(cx - 140, by - 20, 280, 55, 8).lineStyle(2, 0xffdd00).strokeRoundedRect(cx - 140, by - 20, 280, 55, 8));
+      zone.on("pointerout", () => bg.clear().fillStyle(0x444444, 0.9).fillRoundedRect(cx - 140, by - 20, 280, 55, 8).lineStyle(2, 0xffdd00).strokeRoundedRect(cx - 140, by - 20, 280, 55, 8));
+      zone.on("pointerdown", () => {
+        upgrade.apply(this);
+        this.hideLevelUp();
+      });
+      this.levelUpContainer.add(zone);
+    });
+
+    this.levelUpContainer.setVisible(true);
+  }
+
+  hideLevelUp() {
+    this.levelUpContainer.setVisible(false);
+    this.levelUpContainer.removeAll(true);
+    this.paused = false;
+    this.physics.resume();
+  }
+
+  doGameOver() {
+    this.gameOver = true;
+    this.physics.pause();
+    const cam = this.cameras.main;
+    this.gameOverText.setText("GAME OVER\n\nPress R to restart");
+    this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
+  }
+
+  updateUI() {
+    const cam = this.cameras.main;
+
+    // HP bar
+    this.hpBar.clear();
+    this.hpBar.fillStyle(0x333333);
+    this.hpBar.fillRect(16, 36, 160, 14);
+    this.hpBar.fillStyle(0x44cc44);
+    this.hpBar.fillRect(16, 36, 160 * (this.hp / this.maxHp), 14);
+    this.hpText.setText(`HP: ${this.hp}/${this.maxHp}`);
+
+    // XP bar (bottom)
+    this.xpBar.clear();
+    this.xpBar.fillStyle(0x333333);
+    this.xpBar.fillRect(0, cam.height - 10, cam.width, 10);
+    this.xpBar.fillStyle(0x4488ff);
+    this.xpBar.fillRect(0, cam.height - 10, cam.width * (this.xp / this.xpToNext), 10);
+
+    // Timer
+    const mins = Math.floor(this.elapsed / 60);
+    const secs = Math.floor(this.elapsed % 60);
+    this.timerText.setText(`${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
+
+    // Level
+    this.levelText.setText(`Lv.${this.level}  Toast:${this.toastLevel}`);
+  }
+}
