@@ -1,11 +1,10 @@
 import Phaser from "phaser";
+import { Player } from './Player';
+import { GAME_CONFIG } from './Constants';
 
 // ──────────────────────────────────────────────
 // TOASTER SURVIVORS: Breakfast Protocol
 // ──────────────────────────────────────────────
-
-const WORLD_W = 2000;
-const WORLD_H = 2000;
 
 // Upgrade definitions
 interface Upgrade {
@@ -80,7 +79,7 @@ export default class GameScene extends Phaser.Scene {
   iFrameTimer = 0;
 
   // Game objects
-  player!: Phaser.Physics.Arcade.Sprite;
+  player!: Player;
   enemies!: Phaser.Physics.Arcade.Group;
   bullets!: Phaser.Physics.Arcade.Group;
   orbs!: Phaser.Physics.Arcade.Group;
@@ -178,14 +177,13 @@ export default class GameScene extends Phaser.Scene {
     this.paused = false; this.iFrameTimer = 0;
 
     // World bounds
-    this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.physics.world.setBounds(0, 0, GAME_CONFIG.WORLD_W, GAME_CONFIG.WORLD_H);
 
     // Floor
-    this.floor = this.add.tileSprite(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, "floor");
+    this.floor = this.add.tileSprite(GAME_CONFIG.WORLD_W / 2, GAME_CONFIG.WORLD_H / 2, GAME_CONFIG.WORLD_W, GAME_CONFIG.WORLD_H, "floor");
 
     // Player
-    this.player = this.physics.add.sprite(WORLD_W / 2, WORLD_H / 2, "toaster");
-    this.player.setCollideWorldBounds(true);
+    this.player = new Player(this, GAME_CONFIG.WORLD_W / 2, GAME_CONFIG.WORLD_H / 2);
     this.player.setDepth(10);
 
     // Groups
@@ -195,7 +193,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Camera
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.cameras.main.setBounds(0, 0, GAME_CONFIG.WORLD_W, GAME_CONFIG.WORLD_H);
 
     // Input
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -221,7 +219,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   createUI() {
-    const cam = this.cameras.main;
+    const width = GAME_CONFIG.CANVAS_WIDTH;
+    const height = GAME_CONFIG.CANVAS_HEIGHT;
 
     this.hpBar = this.add.graphics().setScrollFactor(0).setDepth(100);
     this.xpBar = this.add.graphics().setScrollFactor(0).setDepth(100);
@@ -232,19 +231,19 @@ export default class GameScene extends Phaser.Scene {
       stroke: "#000000", strokeThickness: 3,
     }).setScrollFactor(0).setDepth(101);
 
-    this.timerText = this.add.text(cam.width - 16, 16, "00:00", {
+    this.timerText = this.add.text(width - 16, 16, "00:00", {
       fontSize: "16px", color: "#ffffff",
       fontFamily: "monospace",
       stroke: "#000000", strokeThickness: 3,
     }).setScrollFactor(0).setDepth(101).setOrigin(1, 0);
 
-    this.levelText = this.add.text(cam.width / 2, 16, "Lv.1", {
+    this.levelText = this.add.text(width / 2, 16, "Lv.1", {
       fontSize: "14px", color: "#ffdd00",
       fontFamily: "monospace",
       stroke: "#000000", strokeThickness: 3,
     }).setScrollFactor(0).setDepth(101).setOrigin(0.5, 0);
 
-    this.gameOverText = this.add.text(cam.width / 2, cam.height / 2, "", {
+    this.gameOverText = this.add.text(width / 2, height / 2, "", {
       fontSize: "32px", color: "#ff4444",
       fontFamily: "monospace",
       stroke: "#000000", strokeThickness: 4,
@@ -280,6 +279,10 @@ export default class GameScene extends Phaser.Scene {
       this.physics.moveToObject(enemy, this.player, (enemy.getData("speed") as number) || 90);
     });
 
+    // Update player animation based on velocity
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    this.player.update(body.velocity.x, body.velocity.y);
+
     // Auto-attack
     this.weaponTimer += dt;
     if (this.weaponTimer >= this.toastCooldown) {
@@ -291,7 +294,7 @@ export default class GameScene extends Phaser.Scene {
     this.bullets.getChildren().forEach((b) => {
       const bullet = b as Phaser.Physics.Arcade.Sprite;
       if (!bullet.active) return;
-      if (bullet.x < -50 || bullet.x > WORLD_W + 50 || bullet.y < -50 || bullet.y > WORLD_H + 50) {
+      if (bullet.x < -50 || bullet.x > GAME_CONFIG.WORLD_W + 50 || bullet.y < -50 || bullet.y > GAME_CONFIG.WORLD_H + 50) {
         bullet.destroy();
       }
     });
@@ -321,15 +324,17 @@ export default class GameScene extends Phaser.Scene {
     if (this.cursors.down.isDown || this.wasd.S.isDown) vy = 1;
 
     const len = Math.sqrt(vx * vx + vy * vy) || 1;
-    this.player.setVelocity((vx / len) * this.playerSpeed, (vy / len) * this.playerSpeed);
+    // Normalize and apply speed
+    const speed = this.playerSpeed;
+    this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
   }
 
   spawnEnemy() {
     // Spawn off-screen around the player
     const angle = Math.random() * Math.PI * 2;
     const dist = 500;
-    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, WORLD_W - 20);
-    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, WORLD_H - 20);
+    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, GAME_CONFIG.WORLD_W - 20);
+    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, GAME_CONFIG.WORLD_H - 20);
 
     const enemy = this.physics.add.sprite(x, y, "mouse");
     // Scale hp with time
@@ -385,13 +390,12 @@ export default class GameScene extends Phaser.Scene {
 
   onPlayerHitEnemy(_player: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite) {
     if (this.iFrameTimer > 0) return;
+    
     const dmg = (enemy.getData("dmg") as number) || 5;
     this.hp -= dmg;
     this.iFrameTimer = 0.5; // 0.5s invincibility
 
-    // Flash player red
-    this.player.setTintFill(0xff0000);
-    this.time.delayedCall(100, () => { if (this.player.active) this.player.clearTint(); });
+    this.cameras.main.shake(100, 0.01); 
 
     if (this.hp <= 0) {
       this.hp = 0;
@@ -490,7 +494,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   updateUI() {
-    const cam = this.cameras.main;
+    const width = GAME_CONFIG.CANVAS_WIDTH;
+    const height = GAME_CONFIG.CANVAS_HEIGHT;
 
     // HP bar
     this.hpBar.clear();
@@ -503,9 +508,9 @@ export default class GameScene extends Phaser.Scene {
     // XP bar (bottom)
     this.xpBar.clear();
     this.xpBar.fillStyle(0x333333);
-    this.xpBar.fillRect(0, cam.height - 10, cam.width, 10);
+    this.xpBar.fillRect(0, height - 10, width, 10);
     this.xpBar.fillStyle(0x4488ff);
-    this.xpBar.fillRect(0, cam.height - 10, cam.width * (this.xp / this.xpToNext), 10);
+    this.xpBar.fillRect(0, height - 10, width * (this.xp / this.xpToNext), 10);
 
     // Timer
     const mins = Math.floor(this.elapsed / 60);
