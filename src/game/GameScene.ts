@@ -1,6 +1,9 @@
 import Phaser from "phaser";
 import { Player } from './Player';
 import { GAME_CONFIG } from './Constants';
+import { BaseEnemy } from "./BaseEnemy";
+import { Microwave } from "./NormalEnemies/Microwave";
+import { Roomba } from "./NormalEnemies/Roomba";
 
 // ──────────────────────────────────────────────
 // TOASTER SURVIVORS: Breakfast Protocol
@@ -266,17 +269,20 @@ export default class GameScene extends Phaser.Scene {
     // Spawn enemies
     this.spawnTimer += dt;
     // Difficulty: spawn interval decreases over time
-    const currentInterval = Math.max(0.3, this.spawnInterval - this.elapsed * 0.01);
+    const currentInterval = Math.max(0.4, this.spawnInterval - this.elapsed * 0.01);
     if (this.spawnTimer >= currentInterval) {
       this.spawnTimer = 0;
       this.spawnEnemy();
     }
 
     // Chase player
-    this.enemies.getChildren().forEach((e) => {
-      const enemy = e as Phaser.Physics.Arcade.Sprite;
-      if (!enemy.active) return;
-      this.physics.moveToObject(enemy, this.player, (enemy.getData("speed") as number) || 90);
+    // this.enemies.getChildren().forEach((e) => {
+    //   const enemy = e as Phaser.Physics.Arcade.Sprite;
+    //   if (!enemy.active) return;
+    //   this.physics.moveToObject(enemy, this.player, (enemy.getData("speed") as number) || 90);
+    // });
+    this.enemies.getChildren().forEach((e: any) => {
+        if (e.update) e.update(_time, delta); // Gọi update riêng của từng Class quái
     });
 
     // Update player animation based on velocity
@@ -329,20 +335,51 @@ export default class GameScene extends Phaser.Scene {
     this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
   }
 
+  // spawnEnemy() {
+  //   // Spawn off-screen around the player
+  //   const angle = Math.random() * Math.PI * 2;
+  //   const dist = 500;
+  //   const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, GAME_CONFIG.WORLD_W - 20);
+  //   const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, GAME_CONFIG.WORLD_H - 20);
+
+  //   const enemy = this.physics.add.sprite(x, y, "mouse");
+  //   // Scale hp with time
+  //   const hpBonus = Math.floor(this.elapsed * 0.3);
+  //   enemy.setData("hp", 10 + hpBonus);
+  //   enemy.setData("speed", 90);
+  //   enemy.setData("dmg", 5);
+  //   this.enemies.add(enemy);
+  // }
+
   spawnEnemy() {
-    // Spawn off-screen around the player
     const angle = Math.random() * Math.PI * 2;
     const dist = 500;
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, GAME_CONFIG.WORLD_W - 20);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, GAME_CONFIG.WORLD_H - 20);
 
-    const enemy = this.physics.add.sprite(x, y, "mouse");
-    // Scale hp with time
-    const hpBonus = Math.floor(this.elapsed * 0.3);
-    enemy.setData("hp", 10 + hpBonus);
-    enemy.setData("speed", 90);
-    enemy.setData("dmg", 5);
+    const rand = Math.random();
+    let enemy: BaseEnemy;
+
+    if (rand < 0.1) {
+        enemy = new Microwave(this, x, y);
+    } else if (rand < 0.25) {
+        enemy = new Roomba(this, x, y);
+    } else {
+        // Normal enemy
+        enemy = new BaseEnemy(this, x, y, 'mouse', 10, 90, 5);
+    }
+    
     this.enemies.add(enemy);
+  }
+
+  public takePlayerDamage(amount: number) {
+    this.onPlayerHitEnemy(this.player, { getData: () => amount } as any);
+  }
+
+  public spawnXpOrb(x: number, y: number) {
+    const orb = this.physics.add.sprite(x, y, "screw");
+    orb.setData("xp", 1);
+    this.orbs.add(orb);
   }
 
   fireToast() {
