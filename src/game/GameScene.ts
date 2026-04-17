@@ -2,10 +2,7 @@ import Phaser from "phaser";
 import { Player } from './Player';
 import { GAME_CONFIG } from './Constants';
 import { DamageNumber } from './DamageNumber';
-
-// ──────────────────────────────────────────────
-// TOASTER SURVIVORS: Breakfast Protocol
-// ──────────────────────────────────────────────
+import { Blackout } from './Blackout';
 
 // Upgrade definitions
 interface Upgrade {
@@ -98,6 +95,9 @@ export default class GameScene extends Phaser.Scene {
 
   // Floor
   floor!: Phaser.GameObjects.TileSprite;
+
+  // Blackout effect
+  blackout!: Blackout;
 
   constructor() {
     super({ key: "GameScene" });
@@ -213,6 +213,16 @@ export default class GameScene extends Phaser.Scene {
     // UI (fixed to camera)
     this.createUI();
 
+    // Initialize blackout effect
+    this.blackout = new Blackout(this, this.player, {
+      minDuration: 15,
+      maxDuration: 20,
+      visionRadius: 120,
+      minInterval: 10,
+      maxInterval: 30,
+      enabled: true,
+    });
+
     // R to restart
     this.input.keyboard!.on("keydown-R", () => {
       if (this.gameOver) this.scene.restart();
@@ -315,6 +325,9 @@ export default class GameScene extends Phaser.Scene {
 
     // Update UI
     this.updateUI();
+
+    // Update blackout effect
+    this.blackout.update(delta);
   }
 
   movePlayer() {
@@ -399,7 +412,7 @@ export default class GameScene extends Phaser.Scene {
     this.hp -= dmg;
     this.iFrameTimer = 0.5; // 0.5s invincibility
 
-    // Display player damage number (negative shows as -damage)
+    // Display player damage number
     DamageNumber.create(this, this.player.x, this.player.y - 30, -dmg, 'player_damage', { fontSize: 32 });
 
     this.cameras.main.shake(100, 0.01); 
@@ -490,6 +503,12 @@ export default class GameScene extends Phaser.Scene {
     this.levelUpContainer.removeAll(true);
     this.paused = false;
     this.physics.resume();
+  }
+
+  shutdown() {
+    if (this.blackout) {
+      this.blackout.destroy();
+    }
   }
 
   doGameOver() {
