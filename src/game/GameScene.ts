@@ -4,6 +4,7 @@ import { GAME_CONFIG } from './Constants';
 import { BaseEnemy } from "./BaseEnemy";
 import { Microwave } from "./NormalEnemies/Microwave";
 import { Roomba } from "./NormalEnemies/Roomba";
+import { DamageNumber } from './DamageNumber';
 
 // ──────────────────────────────────────────────
 // TOASTER SURVIVORS: Breakfast Protocol
@@ -409,6 +410,9 @@ export default class GameScene extends Phaser.Scene {
     ehp -= dmg;
     bullet.destroy();
 
+    // Display damage number
+    DamageNumber.create(this, enemy.x, enemy.y, dmg, 'damage');
+
     if (ehp <= 0) {
       // Drop XP orb
       const orb = this.physics.add.sprite(enemy.x, enemy.y, "screw");
@@ -425,12 +429,15 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  onPlayerHitEnemy(_player: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite) {
+  onPlayerHitEnemy(_player: Player, enemy: Phaser.Physics.Arcade.Sprite) {
     if (this.iFrameTimer > 0) return;
     
     const dmg = (enemy.getData("dmg") as number) || 5;
     this.hp -= dmg;
     this.iFrameTimer = 0.5; // 0.5s invincibility
+
+    // Display player damage number (negative shows as -damage)
+    DamageNumber.create(this, this.player.x, this.player.y - 30, -dmg, 'player_damage', { fontSize: 32 });
 
     this.cameras.main.shake(100, 0.01); 
 
