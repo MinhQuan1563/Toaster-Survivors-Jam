@@ -531,34 +531,30 @@ export default class GameScene extends Phaser.Scene {
         });
     }
 
-  onBulletHitEnemy(bullet: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite) {
-    const dmg = bullet.getData("dmg") as number;
-    let ehp = enemy.getData("hp") as number;
-    ehp -= dmg;
-    bullet.destroy();
+    onBulletHitEnemy(bullet: Phaser.Physics.Arcade.Sprite | any, enemy: any) {
+        const dmg = bullet.getDamage
+            ? bullet.getDamage()
+            : (bullet.getData("dmg") as number);
+        bullet.destroy();
+      
+        DamageNumber.create(this, enemy.x, enemy.y, dmg, 'damage');
 
-    if (ehp <= 0) {
-      // Drop XP orb
-      const orb = this.physics.add.sprite(enemy.x, enemy.y, "screw");
-      orb.setData("xp", 1);
-      this.orbs.add(orb);
-      // Re-add overlap for new orb
-      this.physics.add.overlap(this.player, orb, this.onPickupOrb as any, undefined, this);
-      enemy.destroy();
-    } else {
-      enemy.setData("hp", ehp);
-      // Flash white
-      enemy.setTintFill(0xffffff);
-      this.time.delayedCall(80, () => { if (enemy.active) enemy.clearTint(); });
+        if (typeof enemy.takeDamage === "function") {
+            enemy.takeDamage(dmg);
+        }
     }
-  }
 
-  onPlayerHitEnemy(_player: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite) {
-    if (this.iFrameTimer > 0) return;
-    
-    const dmg = (enemy.getData("dmg") as number) || 5;
-    this.hp -= dmg;
-    this.iFrameTimer = 0.5; // 0.5s invincibility
+    onPlayerHitEnemy(player: any, enemy: any) {
+        if (this.iFrameTimer > 0) return;
+        const dmg =
+            typeof enemy.getData === "function" ? enemy.getData("dmg") || 5 : enemy;
+
+        this.hp -= typeof dmg === "number" ? dmg : 5;
+        this.iFrameTimer = 0.5;
+        // Display player damage number (negative shows as -damage)
+        DamageNumber.create(this, this.player.x, this.player.y - 30, -dmg, 'player_damage', { fontSize: 32 });
+
+        this.cameras.main.shake(100, 0.01);
 
         this.cameras.main.shake(100, 0.01);
         this.player.setAlpha(0.5);
