@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import Phaser from "phaser";
 
 export interface DamageNumberConfig {
   /** Duration of the float animation in milliseconds (default: 1200) */
@@ -18,7 +18,7 @@ export interface DamageNumberConfig {
 /**
  * Damage number type - determines default color and behavior
  */
-export type DamageNumberType = 'damage' | 'heal' | 'player_damage';
+export type DamageNumberType = "damage" | "heal" | "player_damage";
 
 /**
  * Floating damage number display system
@@ -26,9 +26,9 @@ export type DamageNumberType = 'damage' | 'heal' | 'player_damage';
  */
 export class DamageNumber {
   private static readonly DEFAULT_COLORS: Record<DamageNumberType, string> = {
-    damage: '#ff6b6b',      // Red for enemy damage
-    heal: '#51cf66',        // Green for healing
-    player_damage: '#ff4444', // Bright red for player damage
+    damage: "#ff6b6b", // Red for enemy damage
+    heal: "#51cf66", // Green for healing
+    player_damage: "#ff4444", // Bright red for player damage
   };
 
   private static readonly DEFAULT_DURATION = 1200; // ms
@@ -48,15 +48,15 @@ export class DamageNumber {
     x: number,
     y: number,
     value: number,
-    type: DamageNumberType = 'damage',
-    config?: DamageNumberConfig
+    type: DamageNumberType = "damage",
+    config?: DamageNumberConfig,
   ): void {
     const cfg: DamageNumberConfig = {
       duration: DamageNumber.DEFAULT_DURATION,
       verticalSpeed: DamageNumber.DEFAULT_VERTICAL_SPEED,
       color: DamageNumber.DEFAULT_COLORS[type],
       fontSize: 28,
-      strokeColor: '#000000',
+      strokeColor: "#000000",
       strokeThickness: 3,
       ...config,
     };
@@ -65,11 +65,11 @@ export class DamageNumber {
     const defaultVerticalSpeed = DamageNumber.DEFAULT_VERTICAL_SPEED;
 
     // Create text with shadow effect
-    const text = scene.add.text(x, y, String(value > 0 ? '+' : '') + value, {
+    const text = scene.add.text(x, y, String(value > 0 ? "+" : "") + value, {
       fontSize: `${cfg.fontSize}px`,
       color: cfg.color,
-      fontFamily: 'Arial, sans-serif',
-      fontStyle: 'bold',
+      fontFamily: "Arial, sans-serif",
+      fontStyle: "bold",
       stroke: cfg.strokeColor,
       strokeThickness: cfg.strokeThickness,
     });

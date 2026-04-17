@@ -7,9 +7,9 @@ export const GAME_CONFIG = {
   CANVAS_HEIGHT: 600,
   WORLD_W: 2000,
   WORLD_H: 2000,
-  
+
   PLAYER_SPEED: 200,
-  
+
   // Machine Theme Color Palette
   COLORS: {
     CHROME_LIGHT: 0xe2e8f0,
@@ -29,5 +29,5 @@ export const GAME_CONFIG = {
     WASHING_MACHINE_BLUE: 0x3b82f6,
     COFFEE_BROWN: 0x451a03,
     STEAM_WHITE: 0xffffff,
-  }
+  },
 };
