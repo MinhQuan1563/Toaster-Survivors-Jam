@@ -9,10 +9,7 @@ import { ToastBullet } from "./Weapons/ToastBullet";
 import { WashingMachine } from "./Bosses/WashingMachine";
 import { EspressoMachine } from "./Bosses/EspressoMachine";
 import { DamageNumber } from './DamageNumber';
-
-// ──────────────────────────────────────────────
-// TOASTER SURVIVORS: Breakfast Protocol
-// ──────────────────────────────────────────────
+import { Blackout } from './Blackout';
 
 // Upgrade definitions
 interface Upgrade {
@@ -122,6 +119,9 @@ export default class GameScene extends Phaser.Scene {
 
     // Floor
     floor!: Phaser.GameObjects.TileSprite;
+
+    // Blackout effect
+    blackout!: Blackout;
 
     constructor() {
         super({ key: "GameScene" });
@@ -280,6 +280,16 @@ export default class GameScene extends Phaser.Scene {
 
         this.createUI();
 
+        // Initialize blackout effect
+        this.blackout = new Blackout(this, this.player, {
+            minDuration: 15,
+            maxDuration: 20,
+            visionRadius: 120,
+            minInterval: 10,
+            maxInterval: 30,
+            enabled: true,
+        });
+
         this.input.keyboard!.on("keydown-R", () => {
             if (this.gameOver) this.scene.restart();
         });
@@ -432,6 +442,9 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.updateUI();
+
+        // Update blackout effect
+        this.blackout.update(delta);
     }
 
     movePlayer() {
@@ -676,6 +689,12 @@ export default class GameScene extends Phaser.Scene {
         const cam = this.cameras.main;
         this.gameOverText.setText("GAME OVER\n\nPress R to restart");
         this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
+    }
+
+    shutdown() {
+        if (this.blackout) {
+          this.blackout.destroy();
+        }
     }
 
     updateUI() {
