@@ -8,6 +8,7 @@ import { RiceCooker } from "./NormalEnemies/RiceCooker";
 import { ToastBullet } from "./Weapons/ToastBullet";
 import { WashingMachine } from "./Bosses/WashingMachine";
 import { EspressoMachine } from "./Bosses/EspressoMachine";
+import { DamageNumber } from './DamageNumber';
 
 // ──────────────────────────────────────────────
 // TOASTER SURVIVORS: Breakfast Protocol
@@ -535,6 +536,8 @@ export default class GameScene extends Phaser.Scene {
             ? bullet.getDamage()
             : (bullet.getData("dmg") as number);
         bullet.destroy();
+      
+        DamageNumber.create(this, enemy.x, enemy.y, dmg, 'damage');
 
         if (typeof enemy.takeDamage === "function") {
             enemy.takeDamage(dmg);
@@ -548,6 +551,10 @@ export default class GameScene extends Phaser.Scene {
 
         this.hp -= typeof dmg === "number" ? dmg : 5;
         this.iFrameTimer = 0.5;
+        // Display player damage number (negative shows as -damage)
+        DamageNumber.create(this, this.player.x, this.player.y - 30, -dmg, 'player_damage', { fontSize: 32 });
+
+        this.cameras.main.shake(100, 0.01); 
 
         this.cameras.main.shake(100, 0.01);
         this.player.setAlpha(0.5);
