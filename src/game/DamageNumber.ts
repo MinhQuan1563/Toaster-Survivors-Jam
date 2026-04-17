@@ -65,7 +65,7 @@ export class DamageNumber {
     const defaultVerticalSpeed = DamageNumber.DEFAULT_VERTICAL_SPEED;
 
     // Create text with shadow effect
-    const text = scene.add.text(x, y, String(value > 0 ? '+' : '') + value, {
+    const text = scene.add.text(x, y, String(type === 'heal' ? '+' : '') + value, {
       fontSize: `${cfg.fontSize}px`,
       color: cfg.color,
       fontFamily: 'Arial, sans-serif',
