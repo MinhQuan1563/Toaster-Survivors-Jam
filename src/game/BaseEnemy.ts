@@ -2,13 +2,15 @@ import Phaser from "phaser";
 import GameScene from "./GameScene";
 
 /**
- * Base class for all enemies (No health bar above head)
+ * Base class for all enemies (no health bar above head)
  */
 export class BaseEnemy extends Phaser.GameObjects.Container {
   public hp: number;
   public maxHp: number;
   public damage: number;
   public speed: number;
+  public isBoss: boolean = false;
+
   protected sceneRef: GameScene;
   protected visual: Phaser.GameObjects.Graphics;
   protected animFrame: number = 0;
@@ -52,9 +54,18 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
   public takeDamage(amount: number) {
     this.hp -= amount;
 
-    // Blinking effect when hit
-    this.visual.setAlpha(0.3);
+    // Hit effect
+    this.sceneRef.playSoundEffect("hit", 0.3);
+    this.sceneRef.createSparkVFX(this.x, this.y);
 
+    // Light knockback effect
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    if (body) {
+      this.y -= 2; // Small upward bounce
+    }
+
+    // Visual flash effect
+    this.visual.setAlpha(0.3);
     this.sceneRef.time.delayedCall(80, () => {
       if (this.active) this.visual.setAlpha(1);
     });
@@ -62,13 +73,24 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     if (this.hp <= 0) this.die();
   }
 
-  // Drop XP function
+  // Drop XP
   protected dropXp() {
     this.sceneRef.spawnXpOrb(this.x, this.y);
   }
 
   protected die() {
     this.dropXp();
+
+    // Death / explosion effect (applies to all enemies)
+    this.sceneRef.playSoundEffect("explode", 0.2); // Explosion sound
+
+    // Create an explosion effect based on whether the enemy is a normal enemy or a boss
+    const explosionScale = this.isBoss ? 3 : 1;
+    this.sceneRef.createExplosionVFX(this.x, this.y, explosionScale);
+
+    if (this.isBoss) {
+      this.sceneRef.cameras.main.shake(300, 0.02); // Strong screen shake when a boss dies
+    }
 
     // Explosion effect / disappear on death
     this.sceneRef.tweens.add({

@@ -65,6 +65,17 @@ export class Player extends Phaser.GameObjects.Container {
    */
   public playAttackAnim() {
     this.attackTimer = 15; // Used only for red core glow effect and lever shake
+
+    // Visual recoil effect when firing
+    if (this.scene) {
+      this.scene.tweens.add({
+        targets: this.graphics,
+        y: 5, // Slightly lower down
+        scaleY: 0.9, // Compress vertically
+        yoyo: true,
+        duration: 50,
+      });
+    }
   }
 
   /**
@@ -171,12 +182,12 @@ export class Player extends Phaser.GameObjects.Container {
     g.fillRoundedRect(-15, bodyY - 8, 12, 6, 2);
     g.fillRoundedRect(3, bodyY - 8, 12, 6, 2);
 
-    // Flashes red when attacking, orange normally
+    // Visual glow effect when firing: Brighter
     const heatPulse = isAttacking
-      ? 1
+      ? 1.5
       : (Math.sin(this.animFrame * 0.1) + 1) / 2;
-    const glowColor = isAttacking ? 0xef4444 : 0xf97316; // Red or Neon Orange
-    g.fillStyle(glowColor, 0.6 + heatPulse * 0.4);
+    const glowColor = isAttacking ? 0xffffff : 0xf97316; // When firing, the core glows white-hot
+    g.fillStyle(glowColor, Math.min(1, 0.5 + heatPulse * 0.5));
     g.fillRect(-13, bodyY - 7, 8, 3);
     g.fillRect(5, bodyY - 7, 8, 3);
 
@@ -213,8 +224,7 @@ export class Player extends Phaser.GameObjects.Container {
     this.faceTimer++;
     if (this.faceTimer >= 80) {
       this.faceTimer = 0;
-      this.currentFaceIndex =
-        (this.currentFaceIndex + 1) % this.faceList.length;
+      this.currentFaceIndex = (this.currentFaceIndex + 1) % this.faceList.length;
     }
 
     // Assign face and color from arrays

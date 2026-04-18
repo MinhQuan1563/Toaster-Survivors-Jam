@@ -45,6 +45,8 @@ export class EspressoMachine extends BaseEnemy {
   ) {
     super(scene, x, y, hp, speed, damage);
 
+    this.isBoss = true;
+    
     this.hpBarGraphics = scene.add.graphics();
     this.add(this.hpBarGraphics);
 

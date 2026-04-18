@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import GameScene from "../GameScene";
 
 /**
  * Burnt toast bullet sprite
@@ -39,5 +40,11 @@ export class ToastBullet extends Phaser.Physics.Arcade.Sprite {
 
     // Toast rotation effect while flying
     this.rotation += this.rotationSpeed;
+    
+    // Visual trail effect (TRAIL)
+    // Every few frames, spawn a smoke trail at the bullet's tail
+    if (this.scene && time % 50 < 20) { 
+        (this.scene as GameScene).createTrailVFX(this.x, this.y);
+    }
   }
 }
