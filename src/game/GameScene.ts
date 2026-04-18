@@ -10,6 +10,7 @@ import { WashingMachine } from "./Bosses/WashingMachine";
 import { EspressoMachine } from "./Bosses/EspressoMachine";
 import { DamageNumber } from './DamageNumber';
 import { Blackout } from './Blackout';
+import { get } from "http";
 
 // Upgrade definitions
 interface Upgrade {
@@ -573,7 +574,12 @@ export default class GameScene extends Phaser.Scene {
         this.player.setAlpha(0.5);
         this.time.delayedCall(100, () => this.player.setAlpha(1));
 
-        if (this.hp <= 0) this.doGameOver();
+        if (this.hp <= 0) {
+            this.hpText.setText(`HP: 0/${this.maxHp}`);
+            this.hpBar.fillStyle(0x333333);
+            this.hpBar.fillRect(16, 36, 160, 14);
+            this.doGameOver();
+        }
     }
 
     onPickupOrb(
@@ -686,9 +692,27 @@ export default class GameScene extends Phaser.Scene {
     doGameOver() {
         this.gameOver = true;
         this.physics.pause();
+        this.saveBestTimeScore();
         const cam = this.cameras.main;
-        this.gameOverText.setText("GAME OVER\n\nPress R to restart");
+        const bestTime = this.getBestTime();
+        const mins = Math.floor(bestTime / 60);
+        const secs = Math.floor(bestTime % 60);
+        this.gameOverText.setText("GAME OVER\n Your Best Score: " + 
+            `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}` + 
+            " \nPress R to restart");
         this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
+    }
+
+    saveBestTimeScore() {
+        const best = this.getBestTime();
+        if (!best || this.elapsed > best) {
+            localStorage.setItem("bestTime", this.elapsed.toString());
+        }
+    }
+
+    getBestTime() {
+        const best = localStorage.getItem("bestTime");
+        return best ? parseFloat(best) : null;
     }
 
     shutdown() {
