@@ -10,6 +10,7 @@ import { WashingMachine } from "./Bosses/WashingMachine";
 import { EspressoMachine } from "./Bosses/EspressoMachine";
 import { DamageNumber } from "./DamageNumber";
 import { Blackout } from "./Blackout";
+import { VendingMachineTrap } from "./Traps/VendingMachineTrap";
 
 // Upgrade definitions
 interface Upgrade {
@@ -81,6 +82,10 @@ export default class GameScene extends Phaser.Scene {
   spawnTimer = 0;
   elapsed = 0;
 
+  // Trap spawn
+  trapSpawnTimer = 0;
+  trapSpawnInterval = 10;
+
   // Weapon timer
   weaponTimer = 0;
 
@@ -94,6 +99,7 @@ export default class GameScene extends Phaser.Scene {
   enemies!: Phaser.Physics.Arcade.Group;
   bullets!: Phaser.Physics.Arcade.Group;
   orbs!: Phaser.Physics.Arcade.Group;
+  traps!: Phaser.Physics.Arcade.Group;
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   wasd!: {
     W: Phaser.Input.Keyboard.Key;
@@ -335,6 +341,7 @@ export default class GameScene extends Phaser.Scene {
     this.enemies = this.physics.add.group({ runChildUpdate: false });
     this.bullets = this.physics.add.group({ runChildUpdate: true });
     this.orbs = this.physics.add.group({ runChildUpdate: false });
+    this.traps = this.physics.add.group({ runChildUpdate: false });
 
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, GAME_CONFIG.WORLD_W, GAME_CONFIG.WORLD_H);
@@ -368,13 +375,20 @@ export default class GameScene extends Phaser.Scene {
       undefined,
       this,
     );
+    this.physics.add.overlap(
+      this.player,
+      this.traps,
+      this.onPlayerHitTrap as any,
+      undefined,
+      this,
+    );
 
     this.createUI();
 
     // Initialize blackout effect
     this.blackout = new Blackout(this, this.player, {
-      minDuration: 15,
-      maxDuration: 20,
+      minDuration: 5,
+      maxDuration: 10,
       visionRadius: 120,
       minInterval: 10,
       maxInterval: 30,
@@ -491,6 +505,13 @@ export default class GameScene extends Phaser.Scene {
       this.spawnEnemy();
     }
 
+    // Spawn traps
+    this.trapSpawnTimer += dt;
+    if (this.trapSpawnTimer >= this.trapSpawnInterval) {
+      this.trapSpawnTimer = 0;
+      this.spawnTrap();
+    }
+
     this.enemies.getChildren().forEach((e: any) => {
       if (e.active && e.update) e.update(_time, delta);
     });
@@ -581,6 +602,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.enemies.add(enemy);
+  }
+
+  spawnTrap() {
+    const angle = Math.random() * Math.PI * 2;
+    const x = this.player.x + Math.cos(angle) * 400;
+    const y = this.player.y + Math.sin(angle) * 400;
+
+    const trap = new VendingMachineTrap(this, x, y);
+    this.traps.add(trap);
   }
 
   public takePlayerDamage(amount: number) {
@@ -689,6 +719,10 @@ export default class GameScene extends Phaser.Scene {
         this.hpBar.fillRect(16, 36, 160, 14);
         this.doGameOver();
     }
+  }
+
+  onPlayerHitTrap(player: Player, trap: VendingMachineTrap) {
+    trap.activateTrap();
   }
 
   onPickupOrb(
@@ -806,15 +840,6 @@ export default class GameScene extends Phaser.Scene {
     this.physics.resume();
   }
 
-  doGameOver() {
-    this.gameOver = true;
-    this.physics.pause();
-    this.cameras.main.shake(500, 0.05);
-    const cam = this.cameras.main;
-    this.gameOverText.setText("GAME OVER\n\nPress R to restart");
-    this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
-  }
-    
   doGameOver() {
       this.gameOver = true;
       this.physics.pause();
