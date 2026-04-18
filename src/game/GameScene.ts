@@ -10,7 +10,6 @@ import { WashingMachine } from "./Bosses/WashingMachine";
 import { EspressoMachine } from "./Bosses/EspressoMachine";
 import { DamageNumber } from './DamageNumber';
 import { Blackout } from './Blackout';
-import { get } from "http";
 
 // Upgrade definitions
 interface Upgrade {
