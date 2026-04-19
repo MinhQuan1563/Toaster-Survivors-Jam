@@ -295,17 +295,15 @@ export class EspressoMachine extends BaseEnemy {
     );
   }
 
+  protected dropXp() {
+    const espresso = this.sceneRef.physics.add.sprite(this.x, this.y, "item_espresso");
+    espresso.setData("type", "ESPRESSO");
+    this.sceneRef.items.add(espresso);
+  }
+
   protected die() {
     this.beansGroup.clear(true, true);
     this.hpBarGraphics.clear();
-    for (let i = 0; i < 15; i++) {
-      const rx = this.x + Phaser.Math.Between(-30, 30);
-      const ry = this.y + Phaser.Math.Between(-30, 30);
-      const orb = this.sceneRef.physics.add.sprite(rx, ry, "screw");
-      orb.setData("xp", 2);
-      orb.setTint(0xf59e0b);
-      this.sceneRef.orbs.add(orb);
-    }
     super.die();
   }
 

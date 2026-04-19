@@ -18,7 +18,7 @@ export interface DamageNumberConfig {
 /**
  * Damage number type - determines default color and behavior
  */
-export type DamageNumberType = "damage" | "heal" | "player_damage";
+export type DamageNumberType = "damage" | "heal" | "player_damage" | "buff";
 
 /**
  * Floating damage number display system
@@ -29,19 +29,21 @@ export class DamageNumber {
     damage: "#ff6b6b", // Red for enemy damage
     heal: "#51cf66", // Green for healing
     player_damage: "#ff4444", // Bright red for player damage
+    buff: "#facc15", // Yellow for buffs
   };
 
   private static readonly DEFAULT_DURATION = 1200; // ms
   private static readonly DEFAULT_VERTICAL_SPEED = -150; // pixels/sec (negative = upward)
 
   /**
-   * Create and animate a floating damage number
+   * Create and animate a floating damage number or text
    * @param scene The Phaser scene
    * @param x World X position
    * @param y World Y position
    * @param value The damage/heal value to display
    * @param type Type of number (affects color)
    * @param config Optional configuration overrides
+   * @param textOverride Optional custom text to display instead of the value (e.g., "BLOCKED!")
    */
   static create(
     scene: Phaser.Scene,
@@ -50,6 +52,7 @@ export class DamageNumber {
     value: number,
     type: DamageNumberType = "damage",
     config?: DamageNumberConfig,
+    textOverride?: string
   ): void {
     const cfg: DamageNumberConfig = {
       duration: DamageNumber.DEFAULT_DURATION,
@@ -62,11 +65,14 @@ export class DamageNumber {
     };
 
     const defaultDuration = DamageNumber.DEFAULT_DURATION;
-    const defaultVerticalSpeed = DamageNumber.DEFAULT_VERTICAL_SPEED;
+
+    // Prioritize displaying textOverride (e.g., "BLOCKED!"), otherwise display the value
+    const displayText = textOverride !== undefined 
+        ? textOverride 
+        : String(type === 'heal' && value > 0 ? '+' : '') + value;
 
     // Create text with shadow effect
-
-    const text = scene.add.text(x, y, String(type === 'heal' ? '+' : '') + value, {
+    const text = scene.add.text(x, y, displayText, {
       fontSize: `${cfg.fontSize}px`,
       color: cfg.color,
       fontFamily: "Arial, sans-serif",
@@ -75,7 +81,7 @@ export class DamageNumber {
       strokeThickness: cfg.strokeThickness,
     });
 
-    text.setDepth(150);
+    text.setDepth(200); // Increase depth to always be on top (overlay monsters and bosses)
     text.setOrigin(0.5, 0.5);
 
     // Animate: float up and fade out
