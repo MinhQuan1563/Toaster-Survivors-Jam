@@ -4,7 +4,7 @@ import { BaseEnemy } from "../BaseEnemy";
 /**
  * Defective Rice Cooker - TANKER
  * - Very high HP, moves slowly and wobbles.
- * - Confused LED face, prone to electrical sparks (shoots flames).
+ * - Confused LED face, prone to electrical sparks.
  * - Ability: Occasionally stops, opens the lid and releases a massive
  * steam cloud that obscures the player's vision.
  */
@@ -108,7 +108,7 @@ export class RiceCooker extends BaseEnemy {
 
   // Large rice cooker drops more XP than normal enemies
   protected dropXp() {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 4; i++) {
       const rx = this.x + Phaser.Math.Between(-20, 20);
       const ry = this.y + Phaser.Math.Between(-20, 20);
       const orb = this.sceneRef.physics.add.sprite(rx, ry, "screw");

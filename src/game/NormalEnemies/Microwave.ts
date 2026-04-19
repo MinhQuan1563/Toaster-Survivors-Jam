@@ -2,13 +2,12 @@ import Phaser from "phaser";
 import { BaseEnemy } from "../BaseEnemy";
 
 /**
- * Kamikaze Microwave
+ * Microwave
  * - Chases the player.
  * - When close enough (triggerRadius), stops and starts countdown.
  * - Window glows red gradually, shakes violently, beeps faster.
- * - Draws red warning circle.
  * - If not destroyed in time, explodes dealing massive damage and drops no XP.
- * - If killed before explosion, drops large XP amount (Risk/Reward).
+ * - If killed before explosion, drops large XP amount.
  */
 export class Microwave extends BaseEnemy {
   private microwaveState: "CHASE" | "PRIMED" | "EXPLODED" = "CHASE";
@@ -220,9 +219,9 @@ export class Microwave extends BaseEnemy {
     }
   }
 
-  // OVERRIDE: Drop large reward (3 XP orbs) if player bravely destroys it before explosion
+  // OVERRIDE: Drop large reward (2 XP orbs) if player bravely destroys it before explosion
   protected dropXp() {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const rx = this.x + Phaser.Math.Between(-15, 15);
       const ry = this.y + Phaser.Math.Between(-15, 15);
       const orb = this.sceneRef.physics.add.sprite(rx, ry, "screw");

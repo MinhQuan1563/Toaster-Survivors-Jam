@@ -72,33 +72,29 @@ export default class GameScene extends Phaser.Scene {
   toastLevel = 1;
   toastDmg = 15;
   toastCooldown = 0.6;
-
-  // XP / leveling
   xp = 0;
   xpToNext = 10;
   level = 1;
-
-  // Spawn
   spawnTimer = 0;
   elapsed = 0;
-
-  // Trap spawn
-  trapSpawnTimer = 0;
-  trapSpawnInterval = 10;
-
-  // Weapon timer
   weaponTimer = 0;
-
-  // Game state
   gameOver = false;
   paused = false;
   iFrameTimer = 0;
+  trapSpawnTimer = 0;
+  trapSpawnInterval = 10;
+
+  // Buff Status
+  public isFrozen: boolean = false;
+  private freezeTimer: number = 0;
+  private espressoTimer: number = 0;
 
   // Game objects
   player!: Player;
   enemies!: Phaser.Physics.Arcade.Group;
   bullets!: Phaser.Physics.Arcade.Group;
   orbs!: Phaser.Physics.Arcade.Group;
+  items!: Phaser.Physics.Arcade.Group;
   traps!: Phaser.Physics.Arcade.Group;
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   wasd!: {
@@ -116,6 +112,7 @@ export default class GameScene extends Phaser.Scene {
   levelText!: Phaser.GameObjects.Text;
   gameOverText!: Phaser.GameObjects.Text;
   levelUpContainer!: Phaser.GameObjects.Container;
+  iceOverlay!: Phaser.GameObjects.Graphics;
 
   // UI NEW: Boss Health Bar
   currentBoss: BaseEnemy | null = null;
@@ -274,13 +271,19 @@ export default class GameScene extends Phaser.Scene {
     // XP Orb: Screw
     g.clear();
     g.fillStyle(0x94a3b8);
-    g.fillCircle(7, 7, 7);
-    g.fillStyle(0x334155);
-    g.fillRect(3, 6, 8, 2);
-    g.fillRect(6, 3, 2, 8);
-    g.fillStyle(0xffffff, 0.6);
-    g.fillCircle(5, 4, 2);
-    g.generateTexture("screw", 14, 14);
+    g.fillCircle(10, 10, 10);
+    g.fillStyle(0xe2e8f0);
+    g.fillCircle(7, 7, 4);
+    g.lineStyle(2, 0x334155);
+    g.beginPath();
+    g.moveTo(4, 4);
+    g.lineTo(16, 16);
+    g.strokePath();
+    g.beginPath();
+    g.moveTo(16, 4);
+    g.lineTo(4, 16);
+    g.strokePath();
+    g.generateTexture("screw", 20, 20);
 
     // Floor tile (64x64)
     g.clear();
@@ -290,6 +293,88 @@ export default class GameScene extends Phaser.Scene {
     g.strokeRect(0, 0, 64, 64);
     g.strokeRect(0, 0, 32, 32);
     g.generateTexture("floor", 64, 64);
+
+    // Heart
+    g.clear();
+    g.fillStyle(0xef4444);
+    g.fillCircle(10, 12, 6);
+    g.fillCircle(20, 12, 6);
+    g.beginPath();
+    g.moveTo(4, 13);
+    g.lineTo(26, 13);
+    g.lineTo(15, 26);
+    g.fillPath();
+    g.lineStyle(2, 0xffffff, 0.5);
+    g.strokePath();
+    g.generateTexture("item_heart", 30, 30);
+
+    // Magnet
+    g.clear();
+    g.lineStyle(8, 0xef4444);
+    g.beginPath();
+    g.arc(15, 15, 10, Math.PI, 0);
+    g.strokePath();
+    g.lineStyle(8, 0xe2e8f0);
+    g.beginPath();
+    g.moveTo(5, 15);
+    g.lineTo(5, 22);
+    g.moveTo(25, 15);
+    g.lineTo(25, 22);
+    g.strokePath();
+    g.generateTexture("item_magnet", 30, 30);
+
+    // Espresso item
+    g.clear();
+    g.fillStyle(0xffffff);
+    g.fillRoundedRect(5, 10, 18, 16, 4);
+    g.lineStyle(3, 0xffffff);
+    g.strokeCircle(25, 18, 5);
+    g.fillStyle(0x451a03);
+    g.fillEllipse(14, 12, 14, 4);
+    g.lineStyle(2, 0xffffff);
+    g.beginPath();
+    g.moveTo(10, 6);
+    g.lineTo(13, 2);
+    g.moveTo(17, 6);
+    g.lineTo(14, 2);
+    g.strokePath();
+    g.generateTexture("item_espresso", 35, 30);
+
+    // Butter
+    g.clear();
+    g.fillStyle(0xffffff);
+    g.fillEllipse(15, 22, 24, 8);
+    g.fillStyle(0xfef08a);
+    g.fillRoundedRect(5, 10, 20, 12, 2);
+    g.generateTexture("item_butter", 30, 30);
+
+    // Bomb EMP
+    g.clear();
+    g.fillStyle(0x22c55e);
+    g.fillCircle(15, 15, 12);
+    g.lineStyle(2, 0x86efac);
+    g.beginPath();
+    g.moveTo(7, 15);
+    g.lineTo(12, 8);
+    g.lineTo(18, 15);
+    g.lineTo(23, 8);
+    g.strokePath();
+    g.generateTexture("item_emp", 30, 30);
+
+    // Bomb WD-40
+    g.clear();
+    g.fillStyle(0x0284c7);
+    g.fillRoundedRect(8, 10, 14, 18, 2);
+    g.fillStyle(0xfde047);
+    g.fillRect(8, 16, 14, 6);
+    g.fillStyle(0xe2e8f0);
+    g.fillRect(12, 6, 6, 4);
+    g.lineStyle(3, 0xef4444);
+    g.beginPath();
+    g.moveTo(15, 8);
+    g.lineTo(28, 2);
+    g.strokePath();
+    g.generateTexture("item_wd40", 30, 30);
 
     g.destroy();
   }
@@ -312,6 +397,9 @@ export default class GameScene extends Phaser.Scene {
     this.paused = false;
     this.iFrameTimer = 0;
     this.currentBoss = null;
+    this.isFrozen = false;
+    this.freezeTimer = 0;
+    this.espressoTimer = 0;
 
     this.sound.play("bgm_battle", { loop: true, volume: 0.25 });
 
@@ -341,6 +429,7 @@ export default class GameScene extends Phaser.Scene {
     this.bullets = this.physics.add.group({ runChildUpdate: true });
     this.orbs = this.physics.add.group({ runChildUpdate: false });
     this.traps = this.physics.add.group({ runChildUpdate: false });
+    this.items = this.physics.add.group({ runChildUpdate: false });
 
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, GAME_CONFIG.WORLD_W, GAME_CONFIG.WORLD_H);
@@ -376,6 +465,13 @@ export default class GameScene extends Phaser.Scene {
     );
     this.physics.add.overlap(
       this.player,
+      this.items,
+      this.onPickupItem as any,
+      undefined,
+      this,
+    );
+    this.physics.add.overlap(
+      this.player,
       this.traps,
       this.onPlayerHitTrap as any,
       undefined,
@@ -391,7 +487,7 @@ export default class GameScene extends Phaser.Scene {
       visionRadius: 120,
       minInterval: 10,
       maxInterval: 30,
-      enabled: true,
+      enabled: false,
     });
 
     this.input.keyboard!.on("keydown-R", () => {
@@ -485,6 +581,14 @@ export default class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(200)
       .setVisible(false);
+
+    // Background overlay for freeze effect
+    this.iceOverlay = this.add.graphics()
+      .setScrollFactor(0)
+      .setDepth(199)
+      .setVisible(false);
+    this.iceOverlay.fillStyle(0x06b6d4, 0.2);
+    this.iceOverlay.fillRect(0, 0, width, height);
   }
 
   update(_time: number, delta: number) {
@@ -492,6 +596,27 @@ export default class GameScene extends Phaser.Scene {
 
     const dt = delta / 1000;
     this.elapsed += dt;
+
+    // Handle espresso hyper mode timer
+    if (this.espressoTimer > 0) {
+      this.espressoTimer -= delta;
+      if (this.espressoTimer <= 0) {
+        this.player.isHyper = false;
+      }
+    }
+
+    // Handle freeze timer
+    if (this.freezeTimer > 0) {
+      this.freezeTimer -= delta;
+      if (this.freezeTimer <= 0) {
+        this.isFrozen = false;
+        this.iceOverlay.setVisible(false);
+        
+        this.enemies.getChildren().forEach((e: any) => {
+          if (e.visual && !e.isBoss) e.visual.setAlpha(1);
+        });
+      }
+    }
 
     // Move Player
     this.movePlayer();
@@ -512,14 +637,23 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.enemies.getChildren().forEach((e: any) => {
-      if (e.active && e.update) e.update(_time, delta);
+      if (!e.active) return;
+
+      if (this.isFrozen && !e.isBoss) {
+        if (e.body) (e.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      }
+      else {
+        if (e.update) e.update(_time, delta);
+      }
     });
 
     // Fire bullets
     this.weaponTimer += dt;
-    if (this.weaponTimer >= this.toastCooldown) {
+    const currentCooldown =
+      this.toastCooldown * (this.player.isHyper ? 0.2 : 1);
+    if (this.weaponTimer >= currentCooldown) {
       this.weaponTimer = 0;
-      this.fireToast(); // Will auto-target nearest enemy
+      this.fireToast();
     }
 
     this.bullets.getChildren().forEach((b) => {
@@ -538,6 +672,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.iFrameTimer > 0) this.iFrameTimer -= dt;
 
+    // Orb magnetization
     this.orbs.getChildren().forEach((o) => {
       const orb = o as Phaser.Physics.Arcade.Sprite;
       if (!orb.active) return;
@@ -547,8 +682,8 @@ export default class GameScene extends Phaser.Scene {
         orb.x,
         orb.y,
       );
-      if (dist < this.pickupRadius) {
-        this.physics.moveToObject(orb, this.player, 300);
+      if (orb.getData("magnetized") || dist < this.pickupRadius) {
+        this.physics.moveToObject(orb, this.player, 500);
       }
     });
 
@@ -567,37 +702,46 @@ export default class GameScene extends Phaser.Scene {
     if (this.cursors.down.isDown || this.wasd.S.isDown) vy = 1;
 
     const len = Math.sqrt(vx * vx + vy * vy) || 1;
-    const speed = this.playerSpeed;
+    const speed = this.playerSpeed * (this.player.isHyper ? 1.8 : 1);
     this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
   }
 
   spawnEnemy() {
     const angle = Math.random() * Math.PI * 2;
-    const x = this.player.x + Math.cos(angle) * 550;
-    const y = this.player.y + Math.sin(angle) * 550;
-
     const r = Math.random();
     let enemy: any;
 
+    // --- GOLDEN CARTON SPAWN LOGIC ---
+    const isGoldenCarton = r < 0.03;
+    const spawnRadius = isGoldenCarton ? 250 : 550;
+
+    const x = this.player.x + Math.cos(angle) * spawnRadius;
+    const y = this.player.y + Math.sin(angle) * spawnRadius;
+
     // --- BOSS SPAWN LOGIC ---
-    if (this.elapsed > 60 && Math.random() < 0.04 && !this.currentBoss) {
+    if (this.elapsed > 60 && r < 0.04 && !this.currentBoss && !isGoldenCarton) {
       enemy = new WashingMachine(this, x, y, 1500, 70, 20);
     } else if (
       this.elapsed > 120 &&
-      Math.random() < 0.02 &&
-      !this.currentBoss
+      r < 0.02 &&
+      !this.currentBoss &&
+      !isGoldenCarton
     ) {
       enemy = new EspressoMachine(this, x, y, 1200, 150, 15);
     }
+    // --- GOLDEN CARTON ---
+    else if (isGoldenCarton) {
+      enemy = new BaseEnemy(this, x, y, 30, 250, 0, "GOLDEN_CARTON");
+    }
     // --- NORMAL ENEMY TYPES ---
     else if (r < 0.2) {
-      enemy = new Microwave(this, x, y, 40, 150, 0);
+      enemy = new Microwave(this, x, y, 60, 150, 0);
     } else if (r < 0.3) {
       enemy = new Roomba(this, x, y, 25, 110, 2);
     } else if (r < 0.4) {
       enemy = new RiceCooker(this, x, y, 180, 60, 10);
     } else {
-      enemy = new BaseEnemy(this, x, y, 15, 100, 5);
+      enemy = new BaseEnemy(this, x, y, 15, 100, 5, "CARTON");
     }
 
     this.enemies.add(enemy);
@@ -696,6 +840,35 @@ export default class GameScene extends Phaser.Scene {
     const dmg =
       typeof enemy.getData === "function" ? enemy.getData("dmg") || 5 : enemy;
 
+    // Check for shield buff
+    if (this.player.hasShield) {
+      this.player.hasShield = false;
+      this.iFrameTimer = 0.5;
+      this.playSoundEffect("hit", 0.8);
+      this.createSparkVFX(player.x, player.y, 0xfde047);
+
+      const angle = Phaser.Math.Angle.Between(
+        player.x,
+        player.y,
+        enemy.x,
+        enemy.y,
+      );
+      if (enemy.setVelocity)
+        enemy.setVelocity(Math.cos(angle) * 600, Math.sin(angle) * 600);
+
+      if (typeof DamageNumber !== "undefined")
+        DamageNumber.create(
+          this,
+          player.x,
+          player.y - 30,
+          0,
+          "buff",
+          { fontSize: 24 },
+          "BLOCKED!",
+        );
+      return;
+    }
+
     this.hp -= typeof dmg === "number" ? dmg : 5;
     this.iFrameTimer = 0.5;
     // Display player damage number (negative shows as -damage)
@@ -718,6 +891,133 @@ export default class GameScene extends Phaser.Scene {
       this.hpBar.fillRect(16, 36, 160, 14);
       this.doGameOver();
     }
+  }
+
+  public spawnBuffItem(x: number, y: number) {
+    const types = ["HEART", "MAGNET", "BUTTER", "EMP", "WD40"];
+    const buffType = Phaser.Math.RND.pick(types);
+    const texMap: Record<string, string> = {
+      HEART: "item_heart",
+      MAGNET: "item_magnet",
+      BUTTER: "item_butter",
+      EMP: "item_emp",
+      WD40: "item_wd40",
+    };
+
+    const item = this.physics.add.sprite(x, y, texMap[buffType]);
+    item.setData("type", buffType);
+    this.tweens.add({
+      targets: item,
+      y: y - 10,
+      yoyo: true,
+      repeat: -1,
+      duration: 800,
+      ease: "Sine.easeInOut",
+    });
+    this.items.add(item);
+  }
+
+  // When player picks up a buff item
+  onPickupItem(_player: any, item: any) {
+    const type = item.getData("type");
+    item.destroy();
+    this.playSoundEffect("pickup", 0.8);
+
+    let buffText = "";
+    switch (type) {
+      case "HEART":
+        this.hp = Math.min(this.maxHp, this.hp + 30);
+        buffText = "+30 HP";
+        this.createSparkVFX(this.player.x, this.player.y, 0x22c55e);
+        break;
+      case "MAGNET":
+        buffText = "MAGNET!";
+        this.orbs
+          .getChildren()
+          .forEach((o: any) => o.setData("magnetized", true));
+        break;
+      case "ESPRESSO":
+        this.espressoTimer = 6000;
+        this.player.isHyper = true;
+        buffText = "HYPER MODE!";
+        break;
+      case "BUTTER":
+        this.player.hasShield = true;
+        buffText = "BUTTER SHIELD!";
+        break;
+      case "EMP":
+        buffText = "EMP BOMB!";
+        this.triggerEMP();
+        break;
+      case "WD40":
+        this.freezeTimer = 3000;
+        this.isFrozen = true;
+        buffText = "FROZEN!";
+        this.iceOverlay.setVisible(true);
+
+        this.triggerWD40Pulse();
+
+        this.enemies.getChildren().forEach((e: any) => { 
+          if(e.visual && !e.isBoss) e.visual.setAlpha(0.5); 
+        }); 
+        break;
+    }
+    if (typeof DamageNumber !== "undefined")
+      DamageNumber.create(
+        this,
+        this.player.x,
+        this.player.y - 40,
+        0,
+        "buff",
+        { fontSize: 24, color: "#facc15" },
+        buffText,
+      );
+  }
+
+  private triggerEMP() {
+    const empRing = this.add.graphics();
+    empRing.setDepth(199);
+
+    this.tweens.addCounter({
+      from: 0,
+      to: Math.max(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT) * 1.5,
+      duration: 800,
+      onUpdate: (tw) => {
+        empRing.clear();
+        empRing.lineStyle(10, 0x22c55e, 1 - tw.progress);
+        empRing.strokeCircle(this.player.x, this.player.y, tw.getValue());
+      },
+      onComplete: () => {
+        empRing.destroy();
+        this.enemies.getChildren().forEach((e: any) => {
+          if (e.active && !e.isBoss) {
+            e.takeDamage(9999);
+          }
+        });
+      },
+    });
+    this.cameras.main.flash(300, 34, 197, 94);
+  }
+
+  private triggerWD40Pulse() {
+    const frostRing = this.add.graphics();
+    frostRing.setDepth(199);
+
+    this.tweens.addCounter({
+      from: 0,
+      to: Math.max(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT) * 1.5,
+      duration: 600,
+      onUpdate: (tw) => {
+        frostRing.clear();
+        frostRing.lineStyle(15, 0x06b6d4, 1 - tw.progress);
+        frostRing.strokeCircle(this.player.x, this.player.y, tw.getValue());
+      },
+      onComplete: () => {
+        frostRing.destroy();
+      },
+    });
+
+    this.cameras.main.flash(200, 6, 182, 212); 
   }
 
   onPlayerHitTrap(player: Player, trap: VendingMachineTrap) {
