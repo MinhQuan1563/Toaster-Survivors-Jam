@@ -737,14 +737,11 @@ export default class GameScene extends Phaser.Scene {
     else if (r < 0.2) {
       enemy = new Microwave(this, x, y, 60, 150, 0);
     } else if (r < 0.3) {
-      // enemy = new Roomba(this, x, y, 25, 110, 2);
-      enemy = new BaseEnemy(this, x, y, 30, 250, 0, "GOLDEN_CARTON");
+      enemy = new Roomba(this, x, y, 25, 110, 2);
     } else if (r < 0.4) {
-      // enemy = new RiceCooker(this, x, y, 180, 60, 10);
-      enemy = new BaseEnemy(this, x, y, 30, 250, 0, "GOLDEN_CARTON");
+      enemy = new RiceCooker(this, x, y, 180, 60, 10);
     } else {
-      // enemy = new BaseEnemy(this, x, y, 15, 100, 5, "CARTON");
-      enemy = new BaseEnemy(this, x, y, 30, 250, 0, "GOLDEN_CARTON");
+      enemy = new BaseEnemy(this, x, y, 15, 100, 5, "CARTON");
     }
 
     this.enemies.add(enemy);
