@@ -135,7 +135,7 @@ export default class GameScene extends Phaser.Scene {
     this.load.audio("hurt", "/assets/sounds/hurt.ogg");
     this.load.audio("pickup", "/assets/sounds/pickup.ogg");
     this.load.audio("level_up", "/assets/sounds/level_up.ogg");
-    this.load.audio('bgm_battle', '/assets/sounds/bgm_battle.ogg');
+    this.load.audio("bgm_battle", "/assets/sounds/bgm_battle.ogg");
 
     this.createTextures();
   }
@@ -144,8 +144,7 @@ export default class GameScene extends Phaser.Scene {
   public playSoundEffect(key: string, volume: number = 0.5) {
     if (this.cache.audio.exists(key)) {
       this.sound.play(key, { volume: volume });
-    } 
-    else {
+    } else {
       console.log(
         `[SFX Missing]: Tried to play sound '${key}' but it was not found.`,
       );
@@ -308,7 +307,7 @@ export default class GameScene extends Phaser.Scene {
     this.iFrameTimer = 0;
     this.currentBoss = null;
 
-    this.sound.play('bgm_battle', { loop: true, volume: 0.25 });
+    this.sound.play("bgm_battle", { loop: true, volume: 0.25 });
 
     this.physics.world.setBounds(
       0,
@@ -684,10 +683,10 @@ export default class GameScene extends Phaser.Scene {
     this.time.delayedCall(100, () => player.setAlpha(1));
 
     if (this.hp <= 0) {
-        this.hpText.setText(`HP: 0/${this.maxHp}`);
-        this.hpBar.fillStyle(0x333333);
-        this.hpBar.fillRect(16, 36, 160, 14);
-        this.doGameOver();
+      this.hpText.setText(`HP: 0/${this.maxHp}`);
+      this.hpBar.fillStyle(0x333333);
+      this.hpBar.fillRect(16, 36, 160, 14);
+      this.doGameOver();
     }
   }
 
@@ -809,37 +808,30 @@ export default class GameScene extends Phaser.Scene {
   doGameOver() {
     this.gameOver = true;
     this.physics.pause();
-    this.cameras.main.shake(500, 0.05);
+    this.saveBestTimeScore();
     const cam = this.cameras.main;
-    this.gameOverText.setText("GAME OVER\n\nPress R to restart");
+    const bestTime = this.getBestTime();
+    const mins = Math.floor(bestTime / 60);
+    const secs = Math.floor(bestTime % 60);
+    this.gameOverText.setText(
+      "GAME OVER\n Your Best Score: " +
+        `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}` +
+        " \nPress R to restart",
+    );
     this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
   }
-    
-  doGameOver() {
-      this.gameOver = true;
-      this.physics.pause();
-      this.saveBestTimeScore();
-      const cam = this.cameras.main;
-      const bestTime = this.getBestTime();
-      const mins = Math.floor(bestTime / 60);
-      const secs = Math.floor(bestTime % 60);
-      this.gameOverText.setText("GAME OVER\n Your Best Score: " + 
-          `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}` + 
-          " \nPress R to restart");
-      this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
+
+  saveBestTimeScore() {
+    const best = this.getBestTime();
+    if (!best || this.elapsed > best) {
+      localStorage.setItem("bestTime", this.elapsed.toString());
+    }
   }
 
-    saveBestTimeScore() {
-      const best = this.getBestTime();
-      if (!best || this.elapsed > best) {
-          localStorage.setItem("bestTime", this.elapsed.toString());
-      }
-    }
-
-    getBestTime() {
-      const best = localStorage.getItem("bestTime");
-      return best ? parseFloat(best) : null;
-    }
+  getBestTime() {
+    const best = localStorage.getItem("bestTime");
+    return best ? parseFloat(best) : null;
+  }
 
   shutdown() {
     if (this.blackout) {
