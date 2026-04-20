@@ -11,62 +11,33 @@ import { EspressoMachine } from "./Bosses/EspressoMachine";
 import { DamageNumber } from "./DamageNumber";
 import { Blackout } from "./Blackout";
 import { VendingMachineTrap } from "./Traps/VendingMachineTrap";
+import { SkillManager } from "./SkillManager";
 
 // Upgrade definitions
 interface Upgrade {
-  key: string;
+  id: string;
+  key:
+    | "aura"
+    | "shrapnel"
+    | "lightning"
+    | "butter"
+    | "cutlery"
+    | "regen"
+    | "maxhp"
+    | "speed"
+    | "pickup"
+    | "toastlvl";
   label: string;
   description: string;
+  icon?: string;
+  color?: number;
   apply: (scene: GameScene) => void;
-  canApply: (scene: GameScene) => boolean;
 }
-
-const UPGRADES: Upgrade[] = [
-  {
-    key: "maxhp",
-    label: "+Max HP",
-    description: "+20 Integrity",
-    apply: (s) => {
-      s.maxHp += 20;
-      s.hp = Math.min(s.hp + 20, s.maxHp);
-    },
-    canApply: () => true,
-  },
-  {
-    key: "speed",
-    label: "+Move Speed",
-    description: "+30 Speed",
-    apply: (s) => {
-      s.playerSpeed += 30;
-    },
-    canApply: () => true,
-  },
-  {
-    key: "pickup",
-    label: "+Pickup Radius",
-    description: "+20 Pickup",
-    apply: (s) => {
-      s.pickupRadius += 20;
-    },
-    canApply: () => true,
-  },
-  {
-    key: "toastlvl",
-    label: "Burnt Toast Level+",
-    description: "+2 damage, -0.05s cooldown",
-    apply: (s) => {
-      s.toastLevel++;
-      s.toastDmg += 2;
-      s.toastCooldown = Math.max(0.15, s.toastCooldown - 0.05);
-    },
-    canApply: (s) => s.toastLevel < 10,
-  },
-];
 
 export default class GameScene extends Phaser.Scene {
   // Player stats
-  hp = 100;
-  maxHp = 100;
+  hp = 1000;
+  maxHp = 1000;
   playerSpeed = 200;
   pickupRadius = 80;
   toastLevel = 1;
@@ -83,6 +54,14 @@ export default class GameScene extends Phaser.Scene {
   iFrameTimer = 0;
   trapSpawnTimer = 0;
   trapSpawnInterval = 10;
+
+  // Passive Stats
+  armor = 0; // Reduces incoming damage
+  hpRegen = 0; // Heals over time
+  regenTimer = 0; // Internal timer for regen
+  projectileSpeed = 1; // Bracer multiplier (1 = 100%)
+  projectileCount = 0; // Duplicator (+ Amount)
+  luck = 1; // Clover (Multiplier for good RNG)
 
   // Buff Status
   public isFrozen: boolean = false;
@@ -113,18 +92,27 @@ export default class GameScene extends Phaser.Scene {
   gameOverText!: Phaser.GameObjects.Text;
   levelUpContainer!: Phaser.GameObjects.Container;
   iceOverlay!: Phaser.GameObjects.Graphics;
+  fpsText!: Phaser.GameObjects.Text;
 
-  // UI NEW: Boss Health Bar
+  // UI Boss Health Bar
   currentBoss: BaseEnemy | null = null;
   bossHpBarBg!: Phaser.GameObjects.Graphics;
   bossHpBarFill!: Phaser.GameObjects.Graphics;
   bossNameText!: Phaser.GameObjects.Text;
+
+  // UI Skills & Tooltip
+  skillHUDContainer!: Phaser.GameObjects.Container;
+  tooltipContainer!: Phaser.GameObjects.Container;
+  tooltipText!: Phaser.GameObjects.Text;
 
   // Floor
   floor!: Phaser.GameObjects.TileSprite;
 
   // Blackout effect
   blackout!: Blackout;
+
+  // Skill Manager
+  public skillManager!: SkillManager;
 
   constructor() {
     super({ key: "GameScene" });
@@ -285,13 +273,20 @@ export default class GameScene extends Phaser.Scene {
     g.strokePath();
     g.generateTexture("screw", 20, 20);
 
-    // Floor tile (64x64)
+    // Floor tile (64x64) - UI Kitchen pattern
     g.clear();
-    g.fillStyle(0xf5e6c8);
+    g.fillStyle(0xf8fafc);
     g.fillRect(0, 0, 64, 64);
-    g.lineStyle(1, 0xe0d0b0);
+    g.lineStyle(2, 0xe2e8f0);
     g.strokeRect(0, 0, 64, 64);
-    g.strokeRect(0, 0, 32, 32);
+    g.fillStyle(0xffffff, 0.8);
+    g.fillRect(2, 2, 60, 4);
+    g.fillRect(2, 2, 4, 60);
+    g.fillStyle(0xd97706, 0.2);
+    if (Math.random() > 0.5) {
+      g.fillCircle(15, 15, 1);
+      g.fillCircle(45, 50, 1.2);
+    }
     g.generateTexture("floor", 64, 64);
 
     // Heart
@@ -376,6 +371,323 @@ export default class GameScene extends Phaser.Scene {
     g.strokePath();
     g.generateTexture("item_wd40", 30, 30);
 
+    // Icon Aura
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.lineStyle(3, 0xef4444);
+    g.strokeCircle(20, 20, 12);
+    g.lineStyle(2, 0xf97316);
+    g.strokeCircle(20, 20, 6);
+    g.generateTexture("icon_aura", 40, 40);
+
+    // Icon Shrapnel
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0xf59e0b);
+    g.fillRect(12, 12, 8, 8);
+    g.fillRect(24, 14, 6, 6);
+    g.fillRect(16, 24, 6, 6);
+    g.lineStyle(2, 0xffffff);
+    g.beginPath();
+    g.moveTo(16, 16);
+    g.lineTo(26, 10);
+    g.moveTo(16, 16);
+    g.lineTo(10, 26);
+    g.moveTo(16, 16);
+    g.lineTo(28, 26);
+    g.strokePath();
+    g.generateTexture("icon_shrapnel", 40, 40);
+
+    // Icon Max HP
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0xef4444);
+    g.fillCircle(14, 16, 6);
+    g.fillCircle(26, 16, 6);
+    g.beginPath();
+    g.moveTo(8, 17);
+    g.lineTo(32, 17);
+    g.lineTo(20, 32);
+    g.fillPath();
+    g.generateTexture("icon_hp", 40, 40);
+
+    // Icon Speed
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.lineStyle(4, 0x0ea5e9);
+    g.beginPath();
+    g.moveTo(12, 12);
+    g.lineTo(20, 20);
+    g.lineTo(12, 28);
+    g.moveTo(22, 12);
+    g.lineTo(30, 20);
+    g.lineTo(22, 28);
+    g.strokePath();
+    g.lineStyle(2, 0x0ea5e9, 0.6);
+    g.beginPath();
+    g.moveTo(4, 20);
+    g.lineTo(8, 20);
+    g.moveTo(6, 14);
+    g.lineTo(12, 14);
+    g.moveTo(6, 26);
+    g.lineTo(12, 26);
+    g.strokePath();
+    g.generateTexture("icon_speed", 40, 40);
+
+    // Icon Toast Level
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x78350f);
+    g.fillRoundedRect(8, 8, 24, 24, 4);
+    g.fillStyle(0xfef08a);
+    g.fillRoundedRect(10, 10, 20, 20, 2);
+    g.fillStyle(0xef4444);
+    g.fillRect(18, 14, 4, 12);
+    g.fillRect(14, 18, 12, 4); //  Dấu + đỏ
+    g.generateTexture("icon_toast", 40, 40);
+
+    // Icon Pickup
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.lineStyle(6, 0xef4444);
+    g.beginPath();
+    g.arc(20, 20, 10, Math.PI, 0);
+    g.strokePath();
+    g.lineStyle(6, 0xe2e8f0);
+    g.beginPath();
+    g.moveTo(10, 20);
+    g.lineTo(10, 28);
+    g.moveTo(30, 20);
+    g.lineTo(30, 28);
+    g.strokePath();
+    g.generateTexture("icon_pickup", 40, 40);
+
+    // Crumb Texture for Shrapnel
+    g.clear();
+    g.fillStyle(0x78350f); // Burnt crust color
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(6, 2);
+    g.lineTo(8, 8);
+    g.lineTo(2, 6);
+    g.fillPath();
+    g.fillStyle(0xd97706); // Inner bread color
+    g.fillCircle(4, 4, 2);
+    g.generateTexture("crumb", 10, 10);
+
+    // Icon Lightning
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0xfacc15);
+    g.beginPath();
+    g.moveTo(24, 6);
+    g.lineTo(12, 22);
+    g.lineTo(22, 22);
+    g.lineTo(16, 36);
+    g.lineTo(30, 18);
+    g.lineTo(20, 18);
+    g.fillPath();
+    g.fillStyle(0xffffff, 0.8);
+    g.fillCircle(16, 35, 2);
+    g.generateTexture("icon_lightning", 40, 40);
+
+    // Icon Butter Puddle
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0xfde047);
+    g.fillEllipse(20, 24, 28, 14);
+    g.fillCircle(14, 20, 6);
+    g.fillCircle(26, 26, 5);
+    g.fillStyle(0xffffff, 0.6);
+    g.fillEllipse(16, 22, 8, 4); // Shine reflection
+    g.generateTexture("icon_butter", 40, 40);
+
+    // Icon Flying Cutlery
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x78350f);
+    g.fillRoundedRect(8, 24, 6, 12, 2); // Handle
+    g.fillStyle(0xcbd5e1);
+    g.beginPath();
+    g.moveTo(9, 24);
+    g.lineTo(13, 24);
+    g.lineTo(26, 4);
+    g.lineTo(8, 8);
+    g.fillPath(); // Blade
+    g.fillStyle(0xffffff);
+    g.beginPath();
+    g.moveTo(9, 24);
+    g.lineTo(8, 8);
+    g.lineTo(12, 12);
+    g.fillPath(); // Blade Edge
+    g.generateTexture("icon_cutlery", 40, 40);
+
+    // Icon Armor (Steel Plating - Shield shape)
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x64748b);
+    g.beginPath();
+    g.moveTo(10, 10);
+    g.lineTo(30, 10);
+    g.lineTo(30, 22);
+    g.lineTo(20, 32);
+    g.lineTo(10, 22);
+    g.fillPath();
+    g.fillStyle(0x94a3b8);
+    g.beginPath();
+    g.moveTo(12, 12);
+    g.lineTo(20, 12);
+    g.lineTo(20, 29);
+    g.lineTo(12, 21);
+    g.fillPath(); // Shield reflection
+    g.generateTexture("icon_armor", 40, 40);
+
+    // Icon Bracer (High-Tension Spring/Speed Arrow)
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x38bdf8);
+    g.beginPath();
+    g.moveTo(12, 20);
+    g.lineTo(20, 12);
+    g.lineTo(20, 16);
+    g.lineTo(28, 16);
+    g.lineTo(28, 24);
+    g.lineTo(20, 24);
+    g.lineTo(20, 28);
+    g.fillPath();
+    g.generateTexture("icon_bracer", 40, 40);
+
+    // Icon Duplicator (Overlapping Toasts)
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x78350f);
+    g.fillRoundedRect(8, 8, 16, 16, 4);
+    g.fillStyle(0xd946ef);
+    g.fillRoundedRect(16, 16, 16, 16, 4);
+    g.generateTexture("icon_duplicator", 40, 40);
+
+    // Icon Luck (4-Leaf Clover)
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x22c55e);
+    g.fillCircle(16, 16, 5);
+    g.fillCircle(24, 16, 5);
+    g.fillCircle(16, 24, 5);
+    g.fillCircle(24, 24, 5);
+    g.lineStyle(2, 0x22c55e);
+    g.beginPath();
+    g.moveTo(20, 24);
+    g.lineTo(20, 32);
+    g.strokePath();
+    g.generateTexture("icon_luck", 40, 40);
+
+    // Icon Regen (Green Cross)
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.fillStyle(0x22c55e);
+    g.fillRect(16, 10, 8, 20);
+    g.fillRect(10, 16, 20, 8);
+    g.generateTexture("icon_regen", 40, 40);
+
+    // Sprite Cutlery (Flying Knife)
+    g.clear();
+    g.fillStyle(0x78350f);
+    g.fillRoundedRect(17, 24, 6, 14, 2);
+    g.fillStyle(0xcbd5e1);
+    g.beginPath();
+    g.moveTo(17, 25);
+    g.lineTo(23, 25);
+    g.lineTo(20, 2);
+    g.fillPath();
+    g.fillStyle(0xffffff);
+    g.beginPath();
+    g.moveTo(17, 25);
+    g.lineTo(20, 2);
+    g.lineTo(20, 25);
+    g.fillPath();
+    g.generateTexture("sprite_cutlery", 40, 40);
+
+    // Sprite Butter Projectile (Butter Puddle)
+    g.clear();
+    g.fillStyle(0xfde047);
+    g.fillCircle(20, 20, 14);
+    g.fillCircle(10, 25, 8);
+    g.fillCircle(30, 22, 10);
+    g.fillCircle(20, 32, 7);
+    g.fillStyle(0xffffff, 0.4);
+    g.fillEllipse(15, 18, 10, 5);
+    g.generateTexture("sprite_butter", 40, 40);
+
+    // [OPTIMIZATION] Generate texture for Carton enemy to save GPU geometry calculations
+    g.clear();
+    const bobOffset = 0;
+    // Normal Carton
+    g.fillStyle(0xb45309);
+    g.fillRoundedRect(0, 0, 36, 36, 4);
+    g.lineStyle(3, 0x78350f);
+    g.strokeRoundedRect(0, 0, 36, 36, 4);
+    g.fillStyle(0x78350f);
+    g.beginPath()
+      .moveTo(0, 0)
+      .lineTo(-8, -10)
+      .lineTo(18, 0)
+      .fillPath()
+      .strokePath();
+    g.beginPath()
+      .moveTo(36, 0)
+      .lineTo(44, -10)
+      .lineTo(18, 0)
+      .fillPath()
+      .strokePath();
+    g.fillStyle(0xfde047);
+    g.fillRect(13, 0, 10, 36);
+    g.lineStyle(3, 0x000000);
+    g.beginPath().moveTo(8, 8).lineTo(14, 14).strokePath();
+    g.beginPath().moveTo(28, 8).lineTo(22, 14).strokePath();
+    g.fillRect(10, 14, 4, 4);
+    g.fillRect(22, 14, 4, 4);
+    g.generateTexture("tex_carton", 50, 50);
+
+    // Golden Carton
+    g.clear();
+    g.fillStyle(0xfacc15);
+    g.fillRoundedRect(0, 0, 36, 36, 4);
+    g.lineStyle(3, 0xca8a04);
+    g.strokeRoundedRect(0, 0, 36, 36, 4);
+    g.fillStyle(0xca8a04);
+    g.beginPath()
+      .moveTo(0, 0)
+      .lineTo(-8, -10)
+      .lineTo(18, 0)
+      .fillPath()
+      .strokePath();
+    g.beginPath()
+      .moveTo(36, 0)
+      .lineTo(44, -10)
+      .lineTo(18, 0)
+      .fillPath()
+      .strokePath();
+    g.fillStyle(0xffffff);
+    g.fillRect(13, 0, 10, 36);
+    g.lineStyle(3, 0x000000);
+    g.beginPath().moveTo(8, 14).lineTo(14, 8).strokePath();
+    g.beginPath().moveTo(28, 14).lineTo(22, 8).strokePath();
+    g.generateTexture("tex_golden_carton", 50, 50);
+
     g.destroy();
   }
 
@@ -400,6 +712,12 @@ export default class GameScene extends Phaser.Scene {
     this.isFrozen = false;
     this.freezeTimer = 0;
     this.espressoTimer = 0;
+    this.armor = 0;
+    this.hpRegen = 0;
+    this.regenTimer = 0;
+    this.projectileSpeed = 1;
+    this.projectileCount = 0;
+    this.luck = 1;
 
     this.sound.play("bgm_battle", { loop: true, volume: 0.25 });
 
@@ -430,6 +748,8 @@ export default class GameScene extends Phaser.Scene {
     this.orbs = this.physics.add.group({ runChildUpdate: false });
     this.traps = this.physics.add.group({ runChildUpdate: false });
     this.items = this.physics.add.group({ runChildUpdate: false });
+
+    this.skillManager = new SkillManager(this);
 
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, GAME_CONFIG.WORLD_W, GAME_CONFIG.WORLD_H);
@@ -493,13 +813,36 @@ export default class GameScene extends Phaser.Scene {
     this.input.keyboard!.on("keydown-R", () => {
       if (this.gameOver) this.scene.restart();
     });
+
+    this.input.keyboard!.on("keydown-K", () => {
+      if (!this.gameOver && !this.paused) {
+        this.level++;
+        this.showLevelUp();
+      }
+    });
+
+    // Bấm phím J: Lập tức gọi ra 10 con quái để test skill (làm bao cát)
+    this.input.keyboard!.on("keydown-J", () => {
+      if (!this.gameOver && !this.paused) {
+        for (let i = 0; i < 10; i++) {
+          this.spawnEnemy();
+        }
+      }
+    });
+
+    // Bấm phím M: Lập tức sinh ra một hộp quà buff (EMP, Đóng băng...)
+    this.input.keyboard!.on("keydown-M", () => {
+      if (!this.gameOver && !this.paused) {
+        this.spawnBuffItem(this.player.x + 50, this.player.y);
+      }
+    });
   }
 
   createUI() {
-    const width = GAME_CONFIG.CANVAS_WIDTH;
-    const height = GAME_CONFIG.CANVAS_HEIGHT;
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
 
-    this.hpBar = this.add.graphics().setScrollFactor(0).setDepth(100);
+    this.hpBar = this.add.graphics().setScrollFactor(0).setDepth(205);
     this.xpBar = this.add.graphics().setScrollFactor(0).setDepth(100);
 
     this.hpText = this.add
@@ -511,18 +854,32 @@ export default class GameScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setScrollFactor(0)
-      .setDepth(101);
+      .setDepth(206);
 
     this.timerText = this.add
       .text(width - 16, 16, "00:00", {
-        fontSize: "16px",
-        color: "#ffffff",
+        fontSize: "18px",
+        color: "#0f172a",
         fontFamily: "monospace",
+        fontStyle: "bold",
+        stroke: "#ffffff",
+        strokeThickness: 4,
+      })
+      .setScrollFactor(0)
+      .setDepth(101)
+      .setOrigin(1, 0);
+
+    this.fpsText = this.add
+      .text(width - 16, 40, "FPS: 60", {
+        fontSize: "14px",
+        color: "#00ff00",
+        fontFamily: "monospace",
+        fontStyle: "bold",
         stroke: "#000000",
         strokeThickness: 3,
       })
       .setScrollFactor(0)
-      .setDepth(101)
+      .setDepth(200)
       .setOrigin(1, 0);
 
     this.levelText = this.add
@@ -536,6 +893,31 @@ export default class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(101)
       .setOrigin(0.5, 0);
+
+    // Skill HUD (Below HP Bar)
+    this.skillHUDContainer = this.add
+      .container(16, 55)
+      .setScrollFactor(0)
+      .setDepth(205);
+
+    // Tooltip
+    this.tooltipContainer = this.add
+      .container(0, 0)
+      .setScrollFactor(0)
+      .setDepth(310)
+      .setVisible(false);
+
+    const tooltipBg = this.add.graphics();
+    tooltipBg.fillStyle(0x0f172a, 0.9);
+    tooltipBg.fillRoundedRect(0, 0, 200, 60, 4);
+    tooltipBg.lineStyle(2, 0x475569);
+    tooltipBg.strokeRoundedRect(0, 0, 200, 60, 4);
+    this.tooltipText = this.add.text(10, 10, "", {
+      fontSize: "12px",
+      color: "#e2e8f0",
+      fontFamily: "Arial, sans-serif",
+    });
+    this.tooltipContainer.add([tooltipBg, this.tooltipText]);
 
     // --- UI Boss: Large Health Bar in Center of Screen ---
     this.bossHpBarBg = this.add
@@ -583,7 +965,8 @@ export default class GameScene extends Phaser.Scene {
       .setVisible(false);
 
     // Background overlay for freeze effect
-    this.iceOverlay = this.add.graphics()
+    this.iceOverlay = this.add
+      .graphics()
       .setScrollFactor(0)
       .setDepth(199)
       .setVisible(false);
@@ -591,11 +974,162 @@ export default class GameScene extends Phaser.Scene {
     this.iceOverlay.fillRect(0, 0, width, height);
   }
 
+  // DISPLAY PASSIVES IN HUD
+  updateSkillHUD() {
+    this.skillHUDContainer.removeAll(true);
+
+    // --- ROW 1: Essential Passives (Directly below HP bar) ---
+    let passiveX = 0;
+    const passives = [
+      {
+        key: "armor",
+        icon: "icon_armor",
+        name: "Steel Plating",
+        val: this.armor,
+        max: 30,
+      },
+      {
+        key: "regen",
+        icon: "icon_regen",
+        name: "Self-Repair",
+        val: this.hpRegen,
+        max: 4,
+      },
+      {
+        key: "bracer",
+        icon: "icon_bracer",
+        name: "Spring",
+        val: Math.round((this.projectileSpeed - 1) * 5),
+        max: 20,
+      }, // Convert 1.2 -> Lv1
+      {
+        key: "duplicator",
+        icon: "icon_duplicator",
+        name: "Extra Slot",
+        val: this.projectileCount,
+        max: 2,
+      },
+      {
+        key: "luck",
+        icon: "icon_luck",
+        name: "Luck",
+        val: Math.round((this.luck - 1) * 10),
+        max: 99,
+      },
+    ];
+
+    passives.forEach((p) => {
+      if (p.val > 0) {
+        const icon = this.add
+          .sprite(passiveX, 4, p.icon)
+          .setOrigin(0, 0)
+          .setScale(0.6); // Scale smaller
+        const isMax = p.val >= p.max;
+        const lvlText = this.add
+          .text(passiveX + 24, 28, isMax ? "MAX" : `${p.val}`, {
+            fontSize: "10px",
+            fontFamily: "monospace",
+            color: isMax ? "#facc15" : "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 2,
+          })
+          .setOrigin(1, 1);
+
+        const zone = this.add
+          .zone(passiveX, 4, 24, 24)
+          .setOrigin(0, 0)
+          .setInteractive({ useHandCursor: true });
+        zone.on("pointerover", (pointer: any) => {
+          this.tooltipText.setText(`[${p.name}]\nCurrent Level: ${p.val}`);
+          this.tooltipContainer.setPosition(pointer.x + 10, pointer.y + 10);
+          this.tooltipContainer.setVisible(true);
+        });
+        zone.on("pointermove", (pointer: any) => {
+          this.tooltipContainer.setPosition(pointer.x + 10, pointer.y + 10);
+        });
+        zone.on("pointerout", () => {
+          this.tooltipContainer.setVisible(false);
+        });
+
+        this.skillHUDContainer.add([icon, lvlText, zone]);
+        passiveX += 30; // Tighter spacing for passives
+      }
+    });
+
+    // --- ROW 2: Active Weapon Skills (Below Passives) ---
+    let activeX = 0;
+    const activeY = 38; // Vertical spacing between rows
+    const weaponKeys: (
+      | "aura"
+      | "shrapnel"
+      | "lightning"
+      | "butter"
+      | "cutlery"
+    )[] = ["aura", "shrapnel", "lightning", "butter", "cutlery"];
+
+    weaponKeys.forEach((key) => {
+      const lv = this.skillManager.levels[key];
+      if (lv > 0) {
+        const data = SkillManager.SKILL_DATA[key];
+        const icon = this.add
+          .sprite(activeX, activeY, data.icon)
+          .setOrigin(0, 0)
+          .setScale(0.8);
+        const isMax = lv === 4;
+        const lvlText = this.add
+          .text(activeX + 32, activeY + 32, isMax ? "MAX" : `${lv}`, {
+            fontSize: "10px",
+            fontFamily: "monospace",
+            color: isMax ? "#facc15" : "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 2,
+          })
+          .setOrigin(1, 1);
+
+        const zone = this.add
+          .zone(activeX, activeY, 32, 32)
+          .setOrigin(0, 0)
+          .setInteractive({ useHandCursor: true });
+        zone.on("pointerover", (pointer: any) => {
+          this.tooltipText.setText(
+            `[${data.name}]\n${data.tiers[lv - 1].shortDesc}`,
+          );
+          this.tooltipContainer
+            .setPosition(pointer.x + 10, pointer.y + 10)
+            .setVisible(true)
+            .setDepth(310);
+        });
+        zone.on("pointermove", (pointer: any) => {
+          this.tooltipContainer.setPosition(pointer.x + 10, pointer.y + 10);
+        });
+        zone.on("pointerout", () => {
+          this.tooltipContainer.setVisible(false);
+        });
+
+        this.skillHUDContainer.add([icon, lvlText, zone]);
+        activeX += 40;
+      }
+    });
+  }
+
   update(_time: number, delta: number) {
     if (this.gameOver || this.paused) return;
 
     const dt = delta / 1000;
     this.elapsed += dt;
+
+    if (this.hpRegen > 0 && this.hp < this.maxHp) {
+      this.regenTimer += dt;
+
+      const regenCooldown = 5 - this.hpRegen;
+
+      if (this.regenTimer >= regenCooldown) {
+        this.regenTimer = 0;
+        this.hp = Math.min(this.maxHp, this.hp + 1);
+        if (typeof DamageNumber !== "undefined")
+          DamageNumber.create(this, this.player.x, this.player.y, 1, "heal");
+      }
+    }
 
     // Handle espresso hyper mode timer
     if (this.espressoTimer > 0) {
@@ -611,7 +1145,7 @@ export default class GameScene extends Phaser.Scene {
       if (this.freezeTimer <= 0) {
         this.isFrozen = false;
         this.iceOverlay.setVisible(false);
-        
+
         this.enemies.getChildren().forEach((e: any) => {
           if (e.visual && !e.isBoss) e.visual.setAlpha(1);
         });
@@ -622,6 +1156,9 @@ export default class GameScene extends Phaser.Scene {
     this.movePlayer();
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     this.player.update(body.velocity.x, body.velocity.y);
+
+    // Update skills (Aura, Shrapnel, Lightning, Butter, Cutlery)
+    this.skillManager.update(delta);
 
     this.spawnTimer += dt;
     if (this.spawnTimer >= Math.max(0.4, 1.5 - this.elapsed * 0.01)) {
@@ -639,10 +1176,12 @@ export default class GameScene extends Phaser.Scene {
     this.enemies.getChildren().forEach((e: any) => {
       if (!e.active) return;
 
-      if (this.isFrozen && !e.isBoss) {
+      const isFrozenByItem = this.isFrozen && !e.isBoss;
+      const isStunnedBySkill = this.skillManager.stunnedEnemies.has(e);
+
+      if (isFrozenByItem || isStunnedBySkill) {
         if (e.body) (e.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
-      }
-      else {
+      } else {
         if (e.update) e.update(_time, delta);
       }
     });
@@ -676,13 +1215,18 @@ export default class GameScene extends Phaser.Scene {
     this.orbs.getChildren().forEach((o) => {
       const orb = o as Phaser.Physics.Arcade.Sprite;
       if (!orb.active) return;
-      const dist = Phaser.Math.Distance.Between(
+
+      // [OPTIMIZATION] Use squared distance
+      const distSq = Phaser.Math.Distance.Squared(
         this.player.x,
         this.player.y,
         orb.x,
         orb.y,
       );
-      if (orb.getData("magnetized") || dist < this.pickupRadius) {
+
+      const pickupRadiusSq = this.pickupRadius * this.pickupRadius;
+
+      if (orb.getData("magnetized") || distSq < pickupRadiusSq) {
         this.physics.moveToObject(orb, this.player, 500);
       }
     });
@@ -711,37 +1255,54 @@ export default class GameScene extends Phaser.Scene {
     const r = Math.random();
     let enemy: any;
 
+    // --- SCALING LOGIC (Enemy) ---
+    const minutesSurvived = Math.floor(this.elapsed / 60);
+    const hpMult = 1 + minutesSurvived * 0.5;
+    const dmgMult = 1 + minutesSurvived * 0.2;
+    // Boss Scaling
+    const bossHpMult = 1 + minutesSurvived * 0.8;
+
     // --- GOLDEN CARTON SPAWN LOGIC ---
-    const isGoldenCarton = r < 0.03;
+    const isGoldenCarton = r < 0.03 * this.luck;
     const spawnRadius = isGoldenCarton ? 250 : 550;
 
     const x = this.player.x + Math.cos(angle) * spawnRadius;
     const y = this.player.y + Math.sin(angle) * spawnRadius;
 
     // --- BOSS SPAWN LOGIC ---
-    if (this.elapsed > 60 && r < 0.04 && !this.currentBoss && !isGoldenCarton) {
-      enemy = new WashingMachine(this, x, y, 1500, 70, 20);
-    } else if (
-      this.elapsed > 120 &&
-      r < 0.02 &&
-      !this.currentBoss &&
-      !isGoldenCarton
-    ) {
-      enemy = new EspressoMachine(this, x, y, 1200, 150, 15);
+    if (this.elapsed > 1 && r < 0.06 && !isGoldenCarton) {
+      enemy = new EspressoMachine(this, x, y, 1200 * bossHpMult, 150, 15 * dmgMult);
+      
+      this.currentBoss = enemy; 
+      
+    } else if (this.elapsed > 2 && r < 0.08 && !isGoldenCarton) {
+      enemy = new WashingMachine(this, x, y, 1500 * bossHpMult, 70, 20 * dmgMult);
+      
+      if (!this.currentBoss || !this.currentBoss.active) {
+        this.currentBoss = enemy;
+      }
     }
     // --- GOLDEN CARTON ---
     else if (isGoldenCarton) {
-      enemy = new BaseEnemy(this, x, y, 30, 250, 0, "GOLDEN_CARTON");
+      enemy = new BaseEnemy(this, x, y, 30 * hpMult, 250, 0, "GOLDEN_CARTON");
     }
     // --- NORMAL ENEMY TYPES ---
-    else if (r < 0.2) {
-      enemy = new Microwave(this, x, y, 60, 150, 0);
-    } else if (r < 0.3) {
-      enemy = new Roomba(this, x, y, 25, 110, 2);
-    } else if (r < 0.4) {
-      enemy = new RiceCooker(this, x, y, 180, 60, 10);
+    else if (r < 0.02) {
+      enemy = new Microwave(this, x, y, 60 * hpMult, 150, 0);
+    } else if (r < 0.03) {
+      enemy = new Roomba(this, x, y, 25 * hpMult, 110, 2 * dmgMult);
+    } else if (r < 0.04) {
+      enemy = new RiceCooker(this, x, y, 180 * hpMult, 60, 10 * dmgMult);
     } else {
-      enemy = new BaseEnemy(this, x, y, 15, 100, 5, "CARTON");
+      enemy = new BaseEnemy(
+        this,
+        x,
+        y,
+        15 * hpMult,
+        100,
+        5 * dmgMult,
+        "CARTON",
+      );
     }
 
     this.enemies.add(enemy);
@@ -761,61 +1322,86 @@ export default class GameScene extends Phaser.Scene {
   }
 
   public spawnXpOrb(x: number, y: number) {
-    const orb = this.physics.add.sprite(x, y, "screw");
+    // Object Pooling: Reuse dead orbs instead of creating new ones
+    let orb = this.orbs.getFirstDead(false) as Phaser.Physics.Arcade.Sprite;
+
+    if (orb) {
+      orb.enableBody(true, x, y, true, true);
+      orb.setData("magnetized", false);
+    } else {
+      orb = this.physics.add.sprite(x, y, "screw");
+      this.orbs.add(orb);
+    }
+
     orb.setData("xp", 1);
-    this.orbs.add(orb);
   }
 
   fireToast() {
     let nearest: Phaser.Physics.Arcade.Sprite | null = null;
-    let nearDist = Infinity;
+    let nearDistSq = Infinity;
+
     this.enemies.getChildren().forEach((e) => {
       const enemy = e as Phaser.Physics.Arcade.Sprite;
       if (!enemy.active) return;
-      const d = Phaser.Math.Distance.Between(
+
+      // Check squared distance
+      const dSq = Phaser.Math.Distance.Squared(
         this.player.x,
         this.player.y,
         enemy.x,
         enemy.y,
       );
-      if (d < nearDist) {
-        nearDist = d;
+
+      if (dSq < nearDistSq) {
+        nearDistSq = dSq;
         nearest = enemy;
       }
     });
 
     if (!nearest) return;
 
-    if (this.player.playAttackAnim) {
-      this.player.playAttackAnim();
+    // Calculate total shots (Base 1 + Duplicator bonus)
+    const totalShots = 1 + this.projectileCount;
+
+    for (let i = 0; i < totalShots; i++) {
+      // Fire multiple toasts consecutively with a slight delay (150ms)
+      this.time.delayedCall(i * 150, () => {
+        if (this.gameOver) return;
+
+        if (this.player.playAttackAnim) this.player.playAttackAnim();
+        this.playSoundEffect("shoot", 0.3);
+
+        const bullet = new ToastBullet(
+          this,
+          this.player.x,
+          this.player.y,
+          this.toastDmg,
+        );
+        this.bullets.add(bullet);
+
+        // Re-calculate target position in case enemy moved
+        const targetX =
+          nearest && nearest.active ? nearest.x : this.player.x + 100;
+        const targetY = nearest && nearest.active ? nearest.y : this.player.y;
+        const angle = Phaser.Math.Angle.Between(
+          this.player.x,
+          this.player.y,
+          targetX,
+          targetY,
+        );
+
+        // Apply Bracer (Projectile Speed) multiplier
+        const bulletSpeed = 500 * this.projectileSpeed;
+        bullet.setVelocity(
+          Math.cos(angle) * bulletSpeed,
+          Math.sin(angle) * bulletSpeed,
+        );
+
+        this.time.delayedCall(2500, () => {
+          if (bullet.active) bullet.destroy();
+        });
+      });
     }
-
-    this.playSoundEffect("shoot", 0.3);
-
-    const bullet = new ToastBullet(
-      this,
-      this.player.x,
-      this.player.y,
-      this.toastDmg,
-    );
-    this.bullets.add(bullet);
-
-    const angle = Phaser.Math.Angle.Between(
-      this.player.x,
-      this.player.y,
-      nearest.x,
-      nearest.y,
-    );
-
-    const bulletSpeed = 500;
-    bullet.setVelocity(
-      Math.cos(angle) * bulletSpeed,
-      Math.sin(angle) * bulletSpeed,
-    );
-
-    this.time.delayedCall(2500, () => {
-      if (bullet.active) bullet.destroy();
-    });
   }
 
   onBulletHitEnemy(bullet: Phaser.Physics.Arcade.Sprite | any, enemy: any) {
@@ -823,6 +1409,9 @@ export default class GameScene extends Phaser.Scene {
       ? bullet.getDamage()
       : (bullet.getData("dmg") as number);
     bullet.destroy();
+
+    // Trigger Shrapnel effect at enemy position
+    this.skillManager.triggerShrapnel(enemy.x, enemy.y, dmg);
 
     this.cameras.main.shake(30, 0.002);
 
@@ -869,12 +1458,19 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.hp -= typeof dmg === "number" ? dmg : 5;
+    const rawDmg = typeof dmg === "number" ? dmg : 5;
+    const finalDmg = Math.max(1, rawDmg - this.armor); // Armor reduces damage, minimum 1
+    this.hp -= finalDmg;
     this.iFrameTimer = 0.5;
     // Display player damage number (negative shows as -damage)
-    DamageNumber.create(this, player.x, player.y - 30, -dmg, "player_damage", {
-      fontSize: 32,
-    });
+    DamageNumber.create(
+      this,
+      player.x,
+      player.y - 30,
+      -finalDmg,
+      "player_damage",
+      { fontSize: 32 },
+    );
 
     // SFX & VFX when player takes damage
     this.playSoundEffect("hurt", 0.5);
@@ -957,9 +1553,9 @@ export default class GameScene extends Phaser.Scene {
 
         this.triggerWD40Pulse();
 
-        this.enemies.getChildren().forEach((e: any) => { 
-          if(e.visual && !e.isBoss) e.visual.setAlpha(0.5); 
-        }); 
+        this.enemies.getChildren().forEach((e: any) => {
+          if (e.visual && !e.isBoss) e.visual.setAlpha(0.5);
+        });
         break;
     }
     if (typeof DamageNumber !== "undefined")
@@ -991,7 +1587,13 @@ export default class GameScene extends Phaser.Scene {
         empRing.destroy();
         this.enemies.getChildren().forEach((e: any) => {
           if (e.active && !e.isBoss) {
-            e.takeDamage(9999);
+            const empDmg = 150 + this.toastLevel * 10;
+            e.takeDamage(empDmg);
+            if (typeof DamageNumber !== "undefined")
+              DamageNumber.create(this, e.x, e.y, empDmg, "damage", {
+                color: "#22c55e",
+                fontSize: 24,
+              });
           }
         });
       },
@@ -1017,7 +1619,7 @@ export default class GameScene extends Phaser.Scene {
       },
     });
 
-    this.cameras.main.flash(200, 6, 182, 212); 
+    this.cameras.main.flash(200, 6, 182, 212);
   }
 
   onPlayerHitTrap(player: Player, trap: VendingMachineTrap) {
@@ -1031,13 +1633,11 @@ export default class GameScene extends Phaser.Scene {
     const xpVal = (orb.getData("xp") as number) || 1;
     this.xp += xpVal;
 
-    // Sound effect when picking up XP
     this.playSoundEffect("pickup", 0.2 + (xpVal > 1 ? 0.2 : 0));
-
-    // Visual effect when picking up XP
     this.createSparkVFX(orb.x, orb.y, 0x38bdf8);
 
-    orb.destroy();
+    // Return to pool by disabling body instead of calling orb.destroy()
+    orb.disableBody(true, true);
 
     if (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
@@ -1049,12 +1649,176 @@ export default class GameScene extends Phaser.Scene {
 
   showLevelUp() {
     this.paused = true;
-    this.playSoundEffect("level_up", 0.4); // Sound effect when leveling up
+    this.playSoundEffect("level_up", 0.4);
     this.physics.pause();
 
-    const available = UPGRADES.filter((u) => u.canApply(this));
+    const baseUpgrades: Upgrade[] = [
+      {
+        id: "maxhp",
+        key: "maxhp",
+        label: "Reinforced Frame",
+        description: "+20 Max HP (Integrity)",
+        icon: "icon_hp",
+        color: 0xef4444,
+        apply: (s) => {
+          s.maxHp += 20;
+          s.hp = Math.min(s.hp + 20, s.maxHp);
+          s.updateSkillHUD();
+        },
+      },
+      {
+        id: "speed",
+        key: "speed",
+        label: "Overdrive Engine",
+        description: "+30 Move Speed",
+        icon: "icon_speed",
+        color: 0xfde047,
+        apply: (s) => {
+          s.playerSpeed += 30;
+          s.updateSkillHUD();
+        },
+      },
+      {
+        id: "pickup",
+        key: "pickup",
+        label: "Magnetic Pull",
+        description: "+20 Screw Pickup Radius",
+        icon: "icon_pickup",
+        color: 0xa855f7,
+        apply: (s) => {
+          s.pickupRadius += 20;
+          s.updateSkillHUD();
+        },
+      },
+      {
+        id: "armor",
+        key: "maxhp",
+        label: "Steel Plating (Armor)",
+        description: "-1 Damage Taken from enemies",
+        icon: "icon_armor",
+        color: 0x94a3b8,
+        apply: (s) => {
+          s.armor += 1;
+          s.updateSkillHUD();
+        },
+      },
+      {
+        id: "regen",
+        key: "regen",
+        label: "Self-Repair (Regen)",
+        description: "+1 HP recovered per second",
+        icon: "icon_regen",
+        color: 0x22c55e,
+        apply: (s) => {
+          s.hpRegen += 1;
+          s.updateSkillHUD();
+        },
+      },
+      {
+        id: "bracer",
+        key: "maxhp",
+        label: "High-Tension Spring",
+        description: "+10% Projectile Speed",
+        icon: "icon_bracer",
+        color: 0x38bdf8,
+        apply: (s) => {
+          s.projectileSpeed += 0.1;
+          s.updateSkillHUD();
+        },
+      },
+      {
+        id: "luck",
+        key: "maxhp",
+        label: "Lucky Charm (Clover)",
+        description: "+10% Chance for rare drops",
+        icon: "icon_luck",
+        color: 0x22c55e,
+        apply: (s) => {
+          s.luck += 0.1;
+          s.updateSkillHUD();
+        },
+      },
+    ];
+
+    if (this.hpRegen < 4) {
+      baseUpgrades.push({
+        id: "regen",
+        key: "regen",
+        label: `Self-Repair (Lv.${this.hpRegen + 1})`,
+        description: `+1 HP recovered every ${4 - this.hpRegen} seconds`,
+        icon: "icon_regen",
+        color: 0x22c55e,
+        apply: (s) => {
+          s.hpRegen += 1;
+          s.updateSkillHUD();
+        },
+      });
+    }
+
+    if (this.projectileCount < 2) {
+      baseUpgrades.push({
+        id: "duplicator",
+        key: "maxhp",
+        label: "Extra Slot (Duplicator)",
+        description: "+1 Projectile fired per attack",
+        icon: "icon_duplicator",
+        color: 0xd946ef,
+        apply: (s) => {
+          s.projectileCount += 1;
+          s.updateSkillHUD();
+        },
+      });
+    }
+
+    if (this.toastLevel < 10) {
+      baseUpgrades.push({
+        id: "toastlvl",
+        key: "toastlvl",
+        label: "High-Heat Toast Core",
+        description: "+2 Toast Damage\n-0.05s Cooldown",
+        icon: "icon_toast",
+        color: 0xf97316,
+        apply: (s) => {
+          s.toastLevel++;
+          s.toastDmg += 2;
+          s.toastCooldown = Math.max(0.15, s.toastCooldown - 0.05);
+        },
+      });
+    }
+
+    // Select skill upgrades based on current levels (level < 4)
+    const skillKeys: (
+      | "aura"
+      | "shrapnel"
+      | "lightning"
+      | "butter"
+      | "cutlery"
+    )[] = ["aura", "shrapnel", "lightning", "butter", "cutlery"];
+    const skillUpgrades: Upgrade[] = [];
+
+    skillKeys.forEach((key) => {
+      const currentLvl = this.skillManager.levels[key];
+      if (currentLvl < 4) {
+        const data = SkillManager.SKILL_DATA[key];
+        const nextTierData = data.tiers[currentLvl];
+        skillUpgrades.push({
+          id: `skill_${key}_${currentLvl + 1}`,
+          key: key,
+          label:
+            data.name + (currentLvl === 3 ? " [MAX]" : ` Lv.${currentLvl + 1}`),
+          description: nextTierData.desc,
+          icon: data.icon,
+          color: data.color,
+          apply: (s) => {
+            s.skillManager.levels[key]++;
+            s.updateSkillHUD(); // Update icons below the HP bar
+          },
+        });
+      }
+    });
+
+    const pool = [...skillUpgrades, ...baseUpgrades]; // Combine skill and stat upgrades
     const picks: Upgrade[] = [];
-    const pool = [...available];
     while (picks.length < 3 && pool.length > 0) {
       const idx = Math.floor(Math.random() * pool.length);
       picks.push(pool.splice(idx, 1)[0]);
@@ -1064,71 +1828,82 @@ export default class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const cx = cam.width / 2;
     const cy = cam.height / 2;
-
     const overlay = this.add.graphics().setScrollFactor(0);
-    overlay.fillStyle(0x000000, 0.7);
+    overlay.fillStyle(0x000000, 0.85);
     overlay.fillRect(0, 0, cam.width, cam.height);
     this.levelUpContainer.add(overlay);
-
     const title = this.add
-      .text(cx, cy - 120, `LEVEL UP! (Lv.${this.level})`, {
-        fontSize: "24px",
-        color: "#ffdd00",
+      .text(cx, cy - 140, `LEVEL ${this.level} - CHOOSE AN UPGRADE`, {
+        fontSize: "28px",
+        color: "#facc15",
         fontFamily: "monospace",
+        fontStyle: "bold",
         stroke: "#000000",
-        strokeThickness: 4,
+        strokeThickness: 5,
       })
       .setOrigin(0.5)
       .setScrollFactor(0);
     this.levelUpContainer.add(title);
 
     picks.forEach((upgrade, i) => {
-      const by = cy - 40 + i * 70;
+      const by = cy - 60 + i * 85; // Card spacing
+
+      // Draw card
       const bg = this.add.graphics().setScrollFactor(0);
-      bg.fillStyle(0x444444, 0.9);
-      bg.fillRoundedRect(cx - 140, by - 20, 280, 55, 8);
-      bg.lineStyle(2, 0xffdd00);
-      bg.strokeRoundedRect(cx - 140, by - 20, 280, 55, 8);
+      const mainColor = upgrade.color || 0x475569;
+
+      // Redraw style on hover/out
+      const drawCard = (isHover: boolean) => {
+        bg.clear();
+        bg.fillStyle(isHover ? 0x1e293b : 0x0f172a, 0.95);
+        bg.fillRoundedRect(cx - 180, by - 35, 360, 70, 8);
+        bg.lineStyle(isHover ? 4 : 2, isHover ? 0xffffff : mainColor);
+        bg.strokeRoundedRect(cx - 180, by - 35, 360, 70, 8);
+      };
+      drawCard(false);
       this.levelUpContainer.add(bg);
 
-      const txt = this.add
-        .text(cx, by, `${upgrade.label}\n${upgrade.description}`, {
-          fontSize: "14px",
+      // Add skill icon (if available)
+      if (upgrade.icon) {
+        const icon = this.add
+          .sprite(cx - 150, by, upgrade.icon)
+          .setScrollFactor(0);
+        this.levelUpContainer.add(icon);
+      }
+
+      // Label and description text
+      const textStartX = upgrade.icon ? cx - 110 : cx - 160;
+      const lblTxt = this.add
+        .text(textStartX, by - 25, upgrade.label, {
+          fontSize: "18px",
           color: "#ffffff",
           fontFamily: "monospace",
-          align: "center",
+          fontStyle: "bold",
         })
-        .setOrigin(0.5, 0)
+        .setOrigin(0, 0)
         .setScrollFactor(0);
-      this.levelUpContainer.add(txt);
+      const descTxt = this.add
+        .text(textStartX, by + 2, upgrade.description, {
+          fontSize: "14px",
+          color: "#cbd5e1",
+          fontFamily: "Arial",
+        })
+        .setOrigin(0, 0)
+        .setScrollFactor(0);
+      this.levelUpContainer.add([lblTxt, descTxt]);
 
       const zone = this.add
-        .zone(cx, by + 10, 280, 55)
+        .zone(cx, by, 360, 70)
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true });
-      zone.on("pointerover", () =>
-        bg
-          .clear()
-          .fillStyle(0x666600, 0.9)
-          .fillRoundedRect(cx - 140, by - 20, 280, 55, 8)
-          .lineStyle(2, 0xffdd00)
-          .strokeRoundedRect(cx - 140, by - 20, 280, 55, 8),
-      );
-      zone.on("pointerout", () =>
-        bg
-          .clear()
-          .fillStyle(0x444444, 0.9)
-          .fillRoundedRect(cx - 140, by - 20, 280, 55, 8)
-          .lineStyle(2, 0xffdd00)
-          .strokeRoundedRect(cx - 140, by - 20, 280, 55, 8),
-      );
+      zone.on("pointerover", () => drawCard(true));
+      zone.on("pointerout", () => drawCard(false));
       zone.on("pointerdown", () => {
         upgrade.apply(this);
         this.hideLevelUp();
       });
       this.levelUpContainer.add(zone);
     });
-
     this.levelUpContainer.setVisible(true);
   }
 
@@ -1174,8 +1949,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   updateUI() {
-    const width = GAME_CONFIG.CANVAS_WIDTH;
-    const height = GAME_CONFIG.CANVAS_HEIGHT;
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
 
     this.hpBar.clear();
     this.hpBar.fillStyle(0x333333);
@@ -1233,6 +2008,20 @@ export default class GameScene extends Phaser.Scene {
         barHeight,
         2,
       );
+    }
+
+    // --- UPDATE FPS ---
+    const currentFps = Math.round(this.game.loop.actualFps);
+    this.fpsText.setText(
+      `FPS: ${currentFps} | Enemy: ${this.enemies.countActive(true)}`,
+    );
+
+    if (currentFps >= 55) {
+      this.fpsText.setColor("#22c55e");
+    } else if (currentFps >= 30) {
+      this.fpsText.setColor("#facc15");
+    } else {
+      this.fpsText.setColor("#ef4444");
     }
   }
 

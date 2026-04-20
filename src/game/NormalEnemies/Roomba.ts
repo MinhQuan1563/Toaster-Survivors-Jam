@@ -9,6 +9,7 @@ import { BaseEnemy } from "../BaseEnemy";
 export class Roomba extends BaseEnemy {
   private targetOrb: any = null;
   private stolenXp: number = 0; // Stores stolen XP
+  private searchTimer: number = 0;
 
   update(time: number, delta: number) {
     super.update(time, delta);
@@ -19,30 +20,31 @@ export class Roomba extends BaseEnemy {
       this.visual.rotation = body.velocity.angle() - Math.PI / 2;
     }
 
-    if (!this.targetOrb || !this.targetOrb.active) {
-      let near = 400; // Trash detection range
+    this.searchTimer += delta;
+
+    // [OPTIMIZATION] Throttle search: Only search for an orb every 300ms, NOT every frame!
+    if ((!this.targetOrb || !this.targetOrb.active) && this.searchTimer > 300) {
+      this.searchTimer = 0; // Reset timer
+      let nearSq = 160000; // 400 * 400 (Squared distance for performance)
+      
       this.sceneRef.orbs.getChildren().forEach((o: any) => {
-        const d = Phaser.Math.Distance.Between(this.x, this.y, o.x, o.y);
-        if (d < near) {
-          near = d;
+        if (!o.active) return;
+        const dSq = Phaser.Math.Distance.Squared(this.x, this.y, o.x, o.y);
+        if (dSq < nearSq) {
+          nearSq = dSq;
           this.targetOrb = o;
         }
       });
     }
 
-    if (this.targetOrb) {
+    if (this.targetOrb && this.targetOrb.active) {
       this.sceneRef.physics.moveToObject(
         this,
         this.targetOrb,
         this.speed * 1.5,
       );
-      const dist = Phaser.Math.Distance.Between(
-        this.x,
-        this.y,
-        this.targetOrb.x,
-        this.targetOrb.y,
-      );
-      if (dist < 25 && this.targetOrb.active) {
+      const distSq = Phaser.Math.Distance.Squared(this.x, this.y, this.targetOrb.x, this.targetOrb.y);
+      if (distSq < 625) {
         const xpAmount = (this.targetOrb.getData("xp") as number) || 1;
         this.stolenXp += xpAmount;
 

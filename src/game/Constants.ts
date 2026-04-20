@@ -1,14 +1,11 @@
 /**
  * Global configuration for the Toaster Survivors game.
- * Centralizing these values allows for easy balancing of difficulty and visuals.
  */
 export const GAME_CONFIG = {
-  CANVAS_WIDTH: 800,
-  CANVAS_HEIGHT: 600,
-  WORLD_W: 2000,
-  WORLD_H: 2000,
-
-  PLAYER_SPEED: 200,
+  CANVAS_WIDTH: 1280,
+  CANVAS_HEIGHT: 720,
+  WORLD_W: 4000,
+  WORLD_H: 4000,
 
   // Machine Theme Color Palette
   COLORS: {

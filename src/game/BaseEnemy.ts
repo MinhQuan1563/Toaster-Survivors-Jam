@@ -12,12 +12,12 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
   public isBoss: boolean = false;
   public enemyType: string;
   public isDead: boolean = false;
+  public speedModifier: number = 1;
 
   protected sceneRef: GameScene;
-  protected visual: Phaser.GameObjects.Graphics;
+  public visual: Phaser.GameObjects.Graphics;
   protected animFrame: number = 0;
 
-  // --- FIX GOLDEN CARTON AI BUG ---
   // Add state management variables for golden carton
   public goldenState: "SURPRISED" | "RUNNING" = "SURPRISED";
   public goldenTimer: number = 0;
@@ -29,7 +29,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     hp: number,
     speed: number,
     damage: number,
-    type: string = "CARTON"
+    type: string = "CARTON",
   ) {
     super(scene, x, y);
     this.sceneRef = scene;
@@ -39,7 +39,16 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     this.damage = damage;
     this.enemyType = type;
 
-    this.visual = scene.add.graphics();
+    // this.visual = scene.add.graphics();
+    // this.add(this.visual);
+
+    if (this.constructor.name === "BaseEnemy") {
+      const texKey =
+        type === "GOLDEN_CARTON" ? "tex_golden_carton" : "tex_carton";
+      this.visual = scene.add.sprite(0, 0, texKey) as any;
+    } else {
+      this.visual = scene.add.graphics() as any;
+    }
     this.add(this.visual);
 
     scene.add.existing(this);
@@ -49,6 +58,8 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     body.setCollideWorldBounds(true);
     body.setSize(40, 40);
     body.setOffset(-20, -20);
+
+    // this.drawEnemy();
   }
 
   public setVelocity(x: number, y: number) {
@@ -81,7 +92,11 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     if (this.enemyType === "GOLDEN_CARTON") {
       this.sceneRef.spawnBuffItem(this.x, this.y);
     } else {
-      this.sceneRef.spawnXpOrb(this.x, this.y);
+      if (Math.random() < 0.005 * this.sceneRef.luck) {
+        this.sceneRef.spawnBuffItem(this.x, this.y);
+      } else {
+        this.sceneRef.spawnXpOrb(this.x, this.y);
+      }
     }
   }
 
@@ -101,6 +116,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
 
     if (this.isBoss) {
       this.sceneRef.cameras.main.shake(300, 0.02);
+      this.sceneRef.currentBoss = null;
     }
 
     this.sceneRef.tweens.add({
@@ -116,91 +132,130 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     this.animFrame++;
 
     if (this.constructor.name === "BaseEnemy") {
-        const player = this.sceneRef.player;
-        
-        if (this.enemyType === "GOLDEN_CARTON") {
-            // --- FIX AI: Make it startled and stand still for 1.5s so player can react ---
-            if (this.goldenState === "SURPRISED") {
-                this.goldenTimer += _delta;
-                this.setVelocity(0, 0); // Stand still
-                this.visual.y = Math.sin(this.animFrame * 0.6) * 4; // Shake with fear
+      const player = this.sceneRef.player;
+      const currentSpeed = this.speed * this.speedModifier;
+      this.visual.y = Math.sin(this.animFrame * 0.1) * 3;
 
-                // After 1.5 seconds, switch to running state
-                if (this.goldenTimer > 1500) {
-                    this.goldenState = "RUNNING";
-                }
-            } 
-            else if (this.goldenState === "RUNNING") {
-                // Turn around and run away
-                const angle = Phaser.Math.Angle.Between(player.x, player.y, this.x, this.y);
-                // Add some randomness to make it harder to shoot
-                const runAngle = angle + Math.sin(this.animFrame * 0.1) * 0.4;
-                
-                this.setVelocity(Math.cos(runAngle) * this.speed, Math.sin(runAngle) * this.speed);
-                this.visual.y = Math.abs(Math.sin(this.animFrame * 0.4) * 12); // Bounce when running
-                
-                // Delete if it runs too far (1000px)
-                if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1000) {
-                    this.destroy();
-                }
-            }
-        } else {
-            // Normal carton: Chase and attack the player
-            this.sceneRef.physics.moveToObject(this, player, this.speed);
+      if (this.enemyType === "GOLDEN_CARTON") {
+        if (this.goldenState === "SURPRISED") {
+          this.goldenTimer += _delta;
+          this.setVelocity(0, 0); // Stand still
+          this.visual.y = Math.sin(this.animFrame * 0.6) * 4; // Shake with fear
+
+          // After 1.5 seconds, switch to running state
+          if (this.goldenTimer > 1500) {
+            this.goldenState = "RUNNING";
+          }
+        } else if (this.goldenState === "RUNNING") {
+          // Turn around and run away
+          const angle = Phaser.Math.Angle.Between(
+            player.x,
+            player.y,
+            this.x,
+            this.y,
+          );
+          // Add some randomness to make it harder to shoot
+          const runAngle = angle + Math.sin(this.animFrame * 0.1) * 0.4;
+          this.setVelocity(
+            Math.cos(runAngle) * currentSpeed,
+            Math.sin(runAngle) * currentSpeed,
+          );
+          this.visual.y = Math.abs(Math.sin(this.animFrame * 0.4) * 12); // Bounce when running
+
+          // Delete if it runs too far (1000px)
+          if (
+            Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) >
+            1000
+          ) {
+            this.destroy();
+          }
         }
+      } else {
+        // Normal carton: Chase and attack the player
+        this.sceneRef.physics.moveToObject(this, player, currentSpeed);
+      }
+    } else {
+      // For complex enemies (Roomba, Microwave), throttle redraws to every 2 frames to save 50% rendering cost
+      if (this.animFrame % 2 === 0) {
+        this.drawEnemy();
+      }
     }
 
-    this.drawEnemy();
+    // this.drawEnemy();
+    this.speedModifier = 1;
   }
 
   protected drawEnemy() {
-    const g = this.visual;
-    g.clear();
-    const bob = Math.sin(this.animFrame * 0.1) * 3;
+    // if (this.constructor.name === "BaseEnemy") return;
 
-    if (this.constructor.name !== "BaseEnemy") return;
+    // const g = this.visual;
+    // g.clear();
+    // // const bob = Math.sin(this.animFrame * 0.1) * 3;
 
-    const isGolden = this.enemyType === "GOLDEN_CARTON";
-    const mainColor = isGolden ? 0xfacc15 : 0xb45309; 
-    const darkColor = isGolden ? 0xca8a04 : 0x78350f;
-    const tapeColor = isGolden ? 0xffffff : 0xfde047;
+    // if (this.constructor.name !== "BaseEnemy") return;
 
-    g.fillStyle(mainColor);
-    g.fillRoundedRect(-18, -18 - bob, 36, 36, 4);
-    g.lineStyle(3, darkColor);
-    g.strokeRoundedRect(-18, -18 - bob, 36, 36, 4);
+    // const isGolden = this.enemyType === "GOLDEN_CARTON";
+    // const mainColor = isGolden ? 0xfacc15 : 0xb45309;
+    // const darkColor = isGolden ? 0xca8a04 : 0x78350f;
+    // const tapeColor = isGolden ? 0xffffff : 0xfde047;
 
-    g.fillStyle(darkColor);
-    g.beginPath(); g.moveTo(-18, -18 - bob); g.lineTo(-26, -28 - bob); g.lineTo(0, -18 - bob); g.fillPath(); g.strokePath();
-    g.beginPath(); g.moveTo(18, -18 - bob); g.lineTo(26, -28 - bob); g.lineTo(0, -18 - bob); g.fillPath(); g.strokePath();
+    // g.fillStyle(mainColor);
+    // g.fillRoundedRect(-18, -18, 36, 36, 4);
+    // g.lineStyle(3, darkColor);
+    // g.strokeRoundedRect(-18, -18, 36, 36, 4);
 
-    g.fillStyle(tapeColor);
-    g.fillRect(-5, -18 - bob, 10, 36);
+    // g.fillStyle(darkColor);
+    // g.beginPath();
+    // g.moveTo(-18, -18);
+    // g.lineTo(-26, -28);
+    // g.lineTo(0, -18);
+    // g.fillPath();
+    // g.strokePath();
+    // g.beginPath();
+    // g.moveTo(18, -18);
+    // g.lineTo(26, -28);
+    // g.lineTo(0, -18);
+    // g.fillPath();
+    // g.strokePath();
 
-    g.fillStyle(0x000000);
-    if (isGolden) {
-      g.lineStyle(3, 0x000000);
-      g.beginPath(); g.moveTo(-10, -4 - bob); g.lineTo(-4, -10 - bob); g.strokePath();
-      g.beginPath(); g.moveTo(10, -4 - bob); g.lineTo(4, -10 - bob); g.strokePath();
-      
-      if (this.animFrame % 20 < 10) {
-          g.fillStyle(0x38bdf8);
-          g.fillCircle(14, -12 - bob, 3);
-      }
+    // g.fillStyle(tapeColor);
+    // g.fillRect(-5, -18, 10, 36);
 
-      // --- FIX: Draw a large red exclamation mark when it's panicking ---
-      if (this.goldenState === "SURPRISED") {
-          g.fillStyle(0xff0000);
-          g.fillRoundedRect(-4, -45 - bob, 8, 14, 2);
-          g.fillCircle(0, -25 - bob, 4);
-      }
-      
-    } else {
-      g.lineStyle(3, 0x000000);
-      g.beginPath(); g.moveTo(-10, -10 - bob); g.lineTo(-4, -4 - bob); g.strokePath();
-      g.beginPath(); g.moveTo(10, -10 - bob); g.lineTo(4, -4 - bob); g.strokePath();
-      g.fillRect(-8, -4 - bob, 4, 4);
-      g.fillRect(4, -4 - bob, 4, 4);
-    }
+    // g.fillStyle(0x000000);
+    // if (isGolden) {
+    //   g.lineStyle(3, 0x000000);
+    //   g.beginPath();
+    //   g.moveTo(-10, -4);
+    //   g.lineTo(-4, -10);
+    //   g.strokePath();
+    //   g.beginPath();
+    //   g.moveTo(10, -4);
+    //   g.lineTo(4, -10);
+    //   g.strokePath();
+
+    //   if (this.animFrame % 20 < 10) {
+    //     g.fillStyle(0x38bdf8);
+    //     g.fillCircle(14, -12, 3);
+    //   }
+
+    //   // --- Draw a large red exclamation mark when it's panicking ---
+    //   if (this.goldenState === "SURPRISED") {
+    //     g.fillStyle(0xff0000);
+    //     g.fillRoundedRect(-4, -45, 8, 14, 2);
+    //     g.fillCircle(0, -25, 4);
+    //   }
+    // } else {
+    //   g.lineStyle(3, 0x000000);
+    //   g.beginPath();
+    //   g.moveTo(-10, -10);
+    //   g.lineTo(-4, -4);
+    //   g.strokePath();
+    //   g.beginPath();
+    //   g.moveTo(10, -10);
+    //   g.lineTo(4, -4);
+    //   g.strokePath();
+    //   g.fillRect(-8, -4, 4, 4);
+    //   g.fillRect(4, -4, 4, 4);
+    // }
   }
 }
