@@ -106,9 +106,29 @@ const Index = () => {
       <h1 className="mb-4 text-2xl font-bold text-foreground font-mono tracking-wide">
         🍞 TOASTER SURVIVORS: Breakfast Protocol 🍞
       </h1>
-      <p className="mb-2 text-sm text-muted-foreground font-mono">
-        WASD/Arrows to move ·  R to restart
-      </p>
+      <div className="mb-2 flex flex-wrap items-center justify-center gap-3 text-xs font-mono">
+        <span className="text-muted-foreground whitespace-nowrap">Move:</span>
+        <div className="flex gap-0.5">
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm" title="Move Up">W</kbd>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm" title="Move Left">A</kbd>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm" title="Move Down">S</kbd>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm" title="Move Right">D</kbd>
+        </div>
+
+        <span className="text-muted-foreground">/</span>
+        <div className="flex gap-0.5">
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm">↑</kbd>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm">←</kbd>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm">↓</kbd>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm">→</kbd>
+        </div>
+
+        <span className="text-muted-foreground">·</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground whitespace-nowrap">Restart:</span>
+          <kbd className="inline-flex items-center justify-center w-6 h-6 rounded border border-border bg-slate-700 text-orange-400 font-bold text-[10px] shadow-sm">R</kbd>
+        </div>
+      </div>
       <div ref={containerRef} className="rounded-lg overflow-hidden border border-border shadow-lg" />
     </div>
   );
