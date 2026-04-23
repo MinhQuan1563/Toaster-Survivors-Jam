@@ -250,7 +250,7 @@ export class VendingMachineTrap extends Phaser.GameObjects.Container {
     });
 
     // Unfreeze player after stun duration
-    this.sceneRef.time.delayedCall(shockDuration * 1000, () => {
+    this.sceneRef.time.delayedCall(shockDuration * 500, () => {
       body.setVelocity(originalVelocityX, originalVelocityY);
       player.setAlpha(1);
       this.shocked = false;

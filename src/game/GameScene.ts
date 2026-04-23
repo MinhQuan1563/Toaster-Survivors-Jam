@@ -11,6 +11,7 @@ import { EspressoMachine } from "./Bosses/EspressoMachine";
 import { DamageNumber } from "./DamageNumber";
 import { Blackout } from "./Blackout";
 import { VendingMachineTrap } from "./Traps/VendingMachineTrap";
+import { SmartFridgeTrap } from "./Traps/SmartFridgeTrap";
 import { SkillManager } from "./SkillManager";
 
 // Upgrade definitions
@@ -72,8 +73,15 @@ export default class GameScene extends Phaser.Scene {
   public isFrozen: boolean = false;
   private freezeTimer: number = 0;
   private espressoTimer: number = 0;
+  public isFrozenByTrap: boolean = false;
+  private frozenByTrapTimer: number = 0;
 
-  // Game objects
+  // Quiz System
+  public activeQuizTrap: SmartFridgeTrap | null = null;
+  private quizOverlay!: Phaser.GameObjects.Graphics;
+  private quizUIContainer!: Phaser.GameObjects.Container;
+  private nearbyFridges: SmartFridgeTrap[] = [];
+  private frozenBlockGfx?: Phaser.GameObjects.Graphics;
   player!: Player;
   enemies!: Phaser.Physics.Arcade.Group;
   bullets!: Phaser.Physics.Arcade.Group;
@@ -791,6 +799,8 @@ export default class GameScene extends Phaser.Scene {
     this.iFrameTimer = 0;
     this.currentBoss = null;
     this.isFrozen = false;
+    this.isFrozenByTrap = false;
+    this.frozenByTrapTimer = 0;
     this.freezeTimer = 0;
     this.espressoTimer = 0;
     this.armor = 0;
@@ -844,6 +854,12 @@ export default class GameScene extends Phaser.Scene {
       D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
+    // Setup E key event listener for quiz interaction
+    this.input.keyboard!.on("keydown-E", () => {
+      if (this.gameOver || this.paused) return;
+      this.triggerQuizInteraction();
+    });
+
     this.levelUpKeys = [
       this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ONE),
       this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TWO),
@@ -888,6 +904,8 @@ export default class GameScene extends Phaser.Scene {
 
     this.createUI();
 
+    this.initFrozenBlockGfx();
+
     // Initialize blackout effect
     this.blackout = new Blackout(this, this.player, {
       minDuration: 5,
@@ -895,7 +913,7 @@ export default class GameScene extends Phaser.Scene {
       visionRadius: 120,
       minInterval: 10,
       maxInterval: 30,
-      enabled: false,
+      enabled: true,
     });
 
     this.input.keyboard!.on("keydown-R", () => {
@@ -1094,6 +1112,20 @@ export default class GameScene extends Phaser.Scene {
       .setVisible(false);
     this.iceOverlay.fillStyle(0x06b6d4, 0.2);
     this.iceOverlay.fillRect(0, 0, width, height);
+
+    // Quiz overlay graphics
+    this.quizOverlay = this.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(300)
+      .setVisible(true);
+
+    // Quiz UI container for text and graphics
+    this.quizUIContainer = this.add
+      .container(0, 0)
+      .setScrollFactor(0)
+      .setDepth(301)
+      .setVisible(true);
   }
 
   // DISPLAY PASSIVES IN HUD
@@ -1243,6 +1275,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
+    // Draw freeze effect if active
+    this.drawFrozenBlockEffect(_time);
+
     if (this.gameOver || this.paused) return;
 
     const dt = delta / 1000;
@@ -1275,17 +1310,32 @@ export default class GameScene extends Phaser.Scene {
       if (this.freezeTimer <= 0) {
         this.isFrozen = false;
         this.iceOverlay.setVisible(false);
-
+        if (!this.isFrozenByTrap) this.showFrozenBlock(false);
         this.enemies.getChildren().forEach((e: any) => {
           if (e.visual && !e.isBoss) e.visual.setAlpha(1);
         });
       }
     }
 
+    // Handle Trap freeze timer
+    if (this.frozenByTrapTimer > 0) {
+      this.frozenByTrapTimer -= delta;
+      if (this.frozenByTrapTimer <= 0) {
+        this.frozenByTrapTimer = 0;
+        this.isFrozenByTrap = false;
+        if (!this.isFrozen) this.showFrozenBlock(false);
+      }
+    }
+
     // Move Player
     this.movePlayer();
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    this.player.update(body.velocity.x, body.velocity.y);
+    if (this.isFrozenByTrap) {
+      this.player.setVelocity(0, 0);
+      this.player.update(0, 0);
+    } else {
+      this.player.update(body.velocity.x, body.velocity.y);
+    }
 
     // Update skills (Aura, Shrapnel, Lightning, Butter, Cutlery)
     this.skillManager.update(delta);
@@ -1320,7 +1370,11 @@ export default class GameScene extends Phaser.Scene {
     this.weaponTimer += dt;
     const currentCooldown =
       this.toastCooldown * (this.player.isHyper ? 0.2 : 1);
-    if (this.weaponTimer >= currentCooldown) {
+    if (
+      this.weaponTimer >= currentCooldown &&
+      !this.isFrozen &&
+      !this.isFrozenByTrap
+    ) {
       this.weaponTimer = 0;
       this.fireToast();
     }
@@ -1363,11 +1417,25 @@ export default class GameScene extends Phaser.Scene {
 
     this.updateUI();
 
+    // Draw quiz UI if active
+    if (this.paused && this.activeQuizTrap) {
+      this.drawQuizUI();
+    } else {
+      // Hide quiz UI when not active
+      this.quizOverlay.setVisible(false);
+      this.quizUIContainer.setVisible(false);
+    }
+
     // Update blackout effect
     this.blackout.update(delta);
   }
 
   movePlayer() {
+    if (this.paused || this.isFrozenByTrap) {
+      this.player.setVelocity(0, 0);
+      return;
+    }
+
     let vx = 0,
       vy = 0;
     if (this.cursors.left.isDown || this.wasd.A.isDown) vx = -1;
@@ -1378,6 +1446,192 @@ export default class GameScene extends Phaser.Scene {
     const len = Math.sqrt(vx * vx + vy * vy) || 1;
     const speed = this.playerSpeed * (this.player.isHyper ? 1.8 : 1);
     this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
+  }
+
+  private initFrozenBlockGfx() {
+    if (this.frozenBlockGfx) return;
+    this.frozenBlockGfx = this.add.graphics().setDepth(999).setVisible(false);
+  }
+
+  private triggerQuizInteraction() {
+    // Clean up dead fridges
+    this.nearbyFridges = this.nearbyFridges.filter((f) => f.active);
+
+    // Check for nearby fridges
+    let closestFridge: SmartFridgeTrap | null = null;
+    let closestDistance = Infinity;
+
+    this.nearbyFridges.forEach((fridge) => {
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        fridge.x,
+        fridge.y,
+      );
+
+      if (dist < fridge.getInteractionRadius() && dist < closestDistance) {
+        closestDistance = dist;
+        closestFridge = fridge;
+      }
+    });
+
+    // If we have a nearby fridge, attempt interaction
+    if (closestFridge && closestFridge.canBeUsed()) {
+      closestFridge.attemptInteraction();
+      this.activeQuizTrap = closestFridge;
+    } else {
+      if (!closestFridge) console.log("No fridge in range");
+      if (closestFridge && !closestFridge.canBeUsed())
+        console.log("Fridge on cooldown");
+    }
+  }
+
+  public showQuizUI(trap: SmartFridgeTrap) {
+    this.activeQuizTrap = trap;
+    this.drawQuizUI();
+  }
+
+  private drawQuizUI() {
+    if (!this.activeQuizTrap) {
+      this.quizOverlay.setVisible(false);
+      this.quizUIContainer.setVisible(false);
+      return;
+    }
+
+    const quizState = this.activeQuizTrap.getQuizState();
+    if (!quizState.isActive || !quizState.question) {
+      this.quizOverlay.setVisible(false);
+      this.quizUIContainer.setVisible(false);
+      return;
+    }
+
+    const cam = this.cameras.main;
+    const width = cam.width;
+    const height = cam.height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    this.quizOverlay.clear();
+    this.quizUIContainer.removeAll(true); // Clear previous text
+
+    // Semi-transparent dark background - fill the entire viewport
+    this.quizOverlay.fillStyle(0x000000, 0.7);
+    this.quizOverlay.fillRect(0, 0, width, height);
+
+    // Quiz panel background
+    const panelWidth = 600;
+    const panelHeight = 280;
+    const panelX = centerX - panelWidth / 2;
+    const panelY = centerY - panelHeight / 2;
+
+    // Use bright blue for the actual quiz panel
+    this.quizOverlay.fillStyle(0x1a1a2e, 1);
+    this.quizOverlay.fillRect(panelX, panelY, panelWidth, panelHeight);
+    console.log("Drew panel background");
+
+    // Panel border
+    this.quizOverlay.lineStyle(3, 0xfbbf24, 1);
+    this.quizOverlay.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+    // Question text
+    const questionLines = this.wrapText(quizState.question.question, 50);
+    questionLines.forEach((line, idx) => {
+      const text = this.add
+        .text(centerX, panelY + 40 + idx * 20, line, {
+          fontFamily: "monospace",
+          fontSize: "16px",
+          color: "#ffffff",
+          align: "center",
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(301);
+      this.quizUIContainer.add(text);
+    });
+
+    // Answer buttons
+    const btnW = panelWidth - 48;
+    const btnH = 44;
+    const btnGap = 12;
+    const btnStartY = panelY + panelHeight - 115;
+    const btnX = panelX + 24;
+
+    const aSelected = quizState.selectedAnswer === "A";
+    const bSelected = quizState.selectedAnswer === "B";
+
+    // Button A
+    const aY = btnStartY;
+    this.quizOverlay.fillStyle(aSelected ? 0x22c55e : 0x2563eb, 1);
+    this.quizOverlay.fillRoundedRect(btnX, aY, btnW, btnH, 8);
+    this.quizOverlay.lineStyle(2, aSelected ? 0xfbbf24 : 0x93c5fd, 1);
+    this.quizOverlay.strokeRoundedRect(btnX, aY, btnW, btnH, 8);
+
+    const tA = this.add
+      .text(
+        btnX + btnW / 2,
+        aY + btnH / 2,
+        "A:  " + quizState.question.answerA,
+        {
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 2,
+        },
+      )
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(302);
+    this.quizUIContainer.add(tA);
+
+    // Button B  (directly below A with a gap)
+    const bY = btnStartY + btnH + btnGap;
+    this.quizOverlay.fillStyle(bSelected ? 0x22c55e : 0xdc2626, 1);
+    this.quizOverlay.fillRoundedRect(btnX, bY, btnW, btnH, 8);
+    this.quizOverlay.lineStyle(2, bSelected ? 0xfbbf24 : 0xfca5a5, 1);
+    this.quizOverlay.strokeRoundedRect(btnX, bY, btnW, btnH, 8);
+
+    const tB = this.add
+      .text(
+        btnX + btnW / 2,
+        bY + btnH / 2,
+        "B:  " + quizState.question.answerB,
+        {
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 2,
+        },
+      )
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(302);
+    this.quizUIContainer.add(tB);
+
+    this.quizOverlay.setVisible(true);
+    this.quizUIContainer.setVisible(true);
+  }
+
+  /**
+   * Utility function to wrap text
+   */
+  private wrapText(text: string, maxLength: number): string[] {
+    const words = text.split(" ");
+    const lines: string[] = [];
+    let currentLine = "";
+
+    words.forEach((word) => {
+      if ((currentLine + word).length > maxLength) {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine += (currentLine ? " " : "") + word;
+      }
+    });
+
+    if (currentLine) lines.push(currentLine);
+    return lines;
   }
 
   spawnEnemy() {
@@ -1453,11 +1707,36 @@ export default class GameScene extends Phaser.Scene {
 
   spawnTrap() {
     const angle = Math.random() * Math.PI * 2;
-    const x = this.player.x + Math.cos(angle) * 400;
-    const y = this.player.y + Math.sin(angle) * 400;
+    const dist = 400;
+    let x = this.player.x + Math.cos(angle) * dist;
+    let y = this.player.y + Math.sin(angle) * dist;
 
-    const trap = new VendingMachineTrap(this, x, y);
-    this.traps.add(trap);
+    // Alternate between different trap types
+    const trapType = Math.random() > 0.4 ? "fridge" : "vending";
+    let trap: Phaser.GameObjects.GameObject & { x: number; y: number };
+    if (trapType === "fridge") {
+      trap = new SmartFridgeTrap(this, x, y) as any;
+      this.nearbyFridges.push(trap as any);
+    } else {
+      trap = new VendingMachineTrap(this, x, y) as any;
+    }
+
+    const bounds = (trap as any).getBounds
+      ? (trap as any).getBounds()
+      : new Phaser.Geom.Rectangle(x, y, 64, 64);
+
+    const halfW = bounds.width / 2;
+    const halfH = bounds.height / 2;
+
+    // Clamp so the whole trap stays inside the world
+    const clampedX = Phaser.Math.Clamp(x, halfW, GAME_CONFIG.WORLD_W - halfW);
+    const clampedY = Phaser.Math.Clamp(y, halfH, GAME_CONFIG.WORLD_H - halfH);
+
+    (trap as any).setPosition?.(clampedX, clampedY);
+    (trap as any).x = clampedX;
+    (trap as any).y = clampedY;
+
+    this.traps.add(trap as any);
   }
 
   public takePlayerDamage(amount: number) {
@@ -1654,6 +1933,66 @@ export default class GameScene extends Phaser.Scene {
       ease: "Sine.easeInOut",
     });
     this.items.add(item);
+  }
+
+  public freezePlayerFor(durationMs: number) {
+    this.frozenByTrapTimer = Math.max(this.frozenByTrapTimer, durationMs);
+    this.isFrozenByTrap = true;
+    this.player.setVelocity?.(0, 0);
+    this.showFrozenBlock(true);
+    this.drawFrozenBlockEffect(this.time.now);
+  }
+
+  private showFrozenBlock(show: boolean) {
+    if (!this.frozenBlockGfx) {
+      this.frozenBlockGfx = this.add.graphics().setDepth(999).setVisible(false);
+    }
+    this.frozenBlockGfx.setVisible(show);
+  }
+
+  private drawFrozenBlockEffect(timeMs: number) {
+    if (!this.isFrozenByTrap || !this.frozenBlockGfx) return;
+    const g = this.frozenBlockGfx;
+    const pad = 10;
+    const w = 40 + pad * 2;
+    const h = 44 + pad * 2;
+    const x = this.player.x - w / 2;
+    const y = this.player.y - h / 2 - 6;
+    const t = timeMs / 1000;
+    const shimmer = 0.5 + 0.5 * Math.sin(t * 2.2);
+    g.clear();
+    g.fillStyle(0x9be7ff, 0.22);
+    g.fillRoundedRect(x, y, w, h, 10);
+
+    g.fillStyle(0x06b6d4, 0.18 + 0.06 * shimmer);
+    g.fillRoundedRect(x + 3, y + 3, w - 6, h - 6, 9);
+
+    // glass highlight stripe
+    g.fillStyle(0xffffff, 0.18 + 0.08 * shimmer);
+    g.fillRoundedRect(x + w * 0.12, y + h * 0.12, w * 0.18, h * 0.76, 8);
+
+    // border
+    g.lineStyle(3, 0xd9fbff, 0.65);
+    g.strokeRoundedRect(x, y, w, h, 10);
+
+    // cracks (simple deterministic pattern, animated slightly)
+    g.lineStyle(1.5, 0xffffff, 0.35);
+    g.beginPath();
+    g.moveTo(x + w * 0.52, y + h * 0.3);
+    g.lineTo(x + w * 0.7, y + h * (0.18 + 0.02 * shimmer));
+    g.lineTo(x + w * 0.82, y + h * 0.32);
+    g.moveTo(x + w * 0.52, y + h * 0.3);
+    g.lineTo(x + w * 0.4, y + h * 0.52);
+    g.lineTo(x + w * 0.22, y + h * 0.62);
+    g.moveTo(x + w * 0.48, y + h * 0.58);
+    g.lineTo(x + w * 0.62, y + h * 0.74);
+    g.strokePath();
+
+    // tiny bubbles
+    g.fillStyle(0xffffff, 0.22 + 0.06 * shimmer);
+    g.fillCircle(x + w * 0.32, y + h * 0.38, 1.6);
+    g.fillCircle(x + w * 0.64, y + h * 0.52, 1.2);
+    g.fillCircle(x + w * 0.42, y + h * 0.74, 1.4);
   }
 
   // When player picks up a buff item
