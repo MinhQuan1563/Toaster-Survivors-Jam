@@ -22,11 +22,16 @@ interface Upgrade {
     | "lightning"
     | "butter"
     | "cutlery"
+    | "blender"
     | "regen"
     | "maxhp"
     | "speed"
     | "pickup"
-    | "toastlvl";
+    | "toastlvl"
+    | "armor"
+    | "luck"
+    | "duplicator"
+    | "bracer";
   label: string;
   description: string;
   icon?: string;
@@ -36,13 +41,13 @@ interface Upgrade {
 
 export default class GameScene extends Phaser.Scene {
   // Player stats
-  hp = 1000;
-  maxHp = 1000;
+  hp = 100;
+  maxHp = 100;
   playerSpeed = 200;
   pickupRadius = 80;
   toastLevel = 1;
   toastDmg = 15;
-  toastCooldown = 0.6;
+  toastCooldown = 1.3;
   xp = 0;
   xpToNext = 10;
   level = 1;
@@ -114,8 +119,25 @@ export default class GameScene extends Phaser.Scene {
   // Skill Manager
   public skillManager!: SkillManager;
 
+  // Upgrade system
+  private levelUpKeys: Phaser.Input.Keyboard.Key[] = [];
+
+  // Intro state
+  private resumeOverlay!: Phaser.GameObjects.Container;
+  public kills: number = 0;
+
   constructor() {
     super({ key: "GameScene" });
+  }
+
+  private toRoman(num: number): string {
+    const map: { [key: number]: string } = {
+      4: "IV",
+      3: "III",
+      2: "II",
+      1: "I",
+    };
+    return map[num] || num.toString();
   }
 
   preload() {
@@ -126,7 +148,19 @@ export default class GameScene extends Phaser.Scene {
     this.load.audio("hurt", "/assets/sounds/hurt.ogg");
     this.load.audio("pickup", "/assets/sounds/pickup.ogg");
     this.load.audio("level_up", "/assets/sounds/level_up.ogg");
-    this.load.audio("bgm_battle", "/assets/sounds/bgm_battle.ogg");
+    this.load.audio("bgm_battle", "/assets/sounds/bgm_battle_2.ogg");
+
+    // --- SKILL SFX ---
+    this.load.audio("skill_lightning", "/assets/sounds/skill_lightning.ogg");
+    this.load.audio("skill_cutlery", "/assets/sounds/skill_cutlery.ogg");
+    this.load.audio("skill_butter", "/assets/sounds/skill_butter.ogg");
+    this.load.audio("skill_shrapnel", "/assets/sounds/skill_shrapnel.ogg");
+
+    // --- ITEM & BUFF SFX ---
+    this.load.audio("item_emp", "/assets/sounds/item_emp.ogg");
+    this.load.audio("item_freeze", "/assets/sounds/item_freeze.ogg");
+    this.load.audio("buff_hyper", "/assets/sounds/buff_hyper.ogg");
+    this.load.audio("shield_block", "/assets/sounds/shield_block.ogg");
 
     this.createTextures();
   }
@@ -273,16 +307,36 @@ export default class GameScene extends Phaser.Scene {
     g.strokePath();
     g.generateTexture("screw", 20, 20);
 
+    // Icon blender
+    g.clear();
+    g.fillStyle(0x1e293b);
+    g.fillRoundedRect(0, 0, 40, 40, 8);
+    g.lineStyle(3, 0x94a3b8);
+    g.strokeCircle(20, 20, 10);
+    g.fillStyle(0xf1f5f9);
+    g.fillCircle(20, 20, 4);
+    g.generateTexture("icon_blender", 40, 40);
+
+    // Blender blade (40x40)
+    g.clear();
+    g.fillStyle(0x94a3b8);
+    g.beginPath();
+    g.moveTo(20, 0);
+    g.lineTo(25, 20);
+    g.lineTo(20, 40);
+    g.lineTo(15, 20);
+    g.fillPath();
+    g.generateTexture("sprite_blender", 40, 40);
+
     // Floor tile (64x64) - UI Kitchen pattern
     g.clear();
     g.fillStyle(0xf8fafc);
     g.fillRect(0, 0, 64, 64);
-    g.lineStyle(2, 0xe2e8f0);
+    g.lineStyle(1, 0xe2e8f0, 0.8);
     g.strokeRect(0, 0, 64, 64);
-    g.fillStyle(0xffffff, 0.8);
-    g.fillRect(2, 2, 60, 4);
-    g.fillRect(2, 2, 4, 60);
-    g.fillStyle(0xd97706, 0.2);
+    g.fillStyle(0xcbd5e1, 0.1);
+    g.fillRect(32, 0, 32, 32);
+    g.fillRect(0, 32, 32, 32);
     if (Math.random() > 0.5) {
       g.fillCircle(15, 15, 1);
       g.fillCircle(45, 50, 1.2);
@@ -439,16 +493,43 @@ export default class GameScene extends Phaser.Scene {
     g.generateTexture("icon_speed", 40, 40);
 
     // Icon Toast Level
+    // g.clear();
+    // g.fillStyle(0x1e293b);
+    // g.fillRoundedRect(0, 0, 40, 40, 8);
+    // g.fillStyle(0x78350f);
+    // g.fillRoundedRect(8, 8, 24, 24, 4);
+    // g.fillStyle(0xfef08a);
+    // g.fillRoundedRect(10, 10, 20, 20, 2);
+    // g.fillStyle(0xef4444);
+    // g.fillRect(18, 14, 4, 12);
+    // g.fillRect(14, 18, 12, 4); //  Dấu + đỏ
+    // g.generateTexture("icon_toast", 40, 40);
     g.clear();
+
+    // 1. Nền Card tối
     g.fillStyle(0x1e293b);
     g.fillRoundedRect(0, 0, 40, 40, 8);
-    g.fillStyle(0x78350f);
-    g.fillRoundedRect(8, 8, 24, 24, 4);
-    g.fillStyle(0xfef08a);
-    g.fillRoundedRect(10, 10, 20, 20, 2);
-    g.fillStyle(0xef4444);
-    g.fillRect(18, 14, 4, 12);
-    g.fillRect(14, 18, 12, 4); //  Dấu + đỏ
+
+    // 2. Vòng tròn đại diện cho Cooldown (Clockwise feel)
+    g.lineStyle(2, 0x38bdf8, 0.8); // Màu xanh dương nhạt (điện năng/tốc độ)
+    g.strokeCircle(20, 20, 14);
+
+    // 3. Lõi màu cam đỏ đại diện cho Damage (Nhiệt độ)
+    g.fillStyle(0xf97316); // Màu cam
+    g.fillCircle(20, 20, 8);
+
+    // 4. Tia sét hoặc tia lửa chéo xuyên qua (Tăng cường sức mạnh)
+    g.lineStyle(3, 0xffffff, 1); // Màu trắng rực
+    g.beginPath();
+    g.moveTo(12, 28);
+    g.lineTo(20, 20);
+    g.lineTo(28, 12);
+    g.strokePath();
+
+    // 5. Điểm nhấn trung tâm rực rỡ
+    g.fillStyle(0xfef08a); // Màu vàng nhạt
+    g.fillCircle(20, 20, 4);
+
     g.generateTexture("icon_toast", 40, 40);
 
     // Icon Pickup
@@ -698,7 +779,7 @@ export default class GameScene extends Phaser.Scene {
     this.pickupRadius = 80;
     this.toastLevel = 1;
     this.toastDmg = 15;
-    this.toastCooldown = 0.6;
+    this.toastCooldown = 1.3;
     this.xp = 0;
     this.xpToNext = 10;
     this.level = 1;
@@ -718,8 +799,9 @@ export default class GameScene extends Phaser.Scene {
     this.projectileSpeed = 1;
     this.projectileCount = 0;
     this.luck = 1;
+    this.kills = 0;
 
-    this.sound.play("bgm_battle", { loop: true, volume: 0.25 });
+    this.sound.play("bgm_battle", { loop: true, volume: 0.1 });
 
     this.physics.world.setBounds(
       0,
@@ -761,6 +843,12 @@ export default class GameScene extends Phaser.Scene {
       S: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
+
+    this.levelUpKeys = [
+      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ONE),
+      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TWO),
+      this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.THREE),
+    ];
 
     this.physics.add.overlap(
       this.bullets,
@@ -814,28 +902,62 @@ export default class GameScene extends Phaser.Scene {
       if (this.gameOver) this.scene.restart();
     });
 
-    this.input.keyboard!.on("keydown-K", () => {
+    this.createResumeOverlay();
+
+    this.game.events.on("blur", () => {
       if (!this.gameOver && !this.paused) {
-        this.level++;
-        this.showLevelUp();
+        this.showResumeMenu();
       }
+    });
+  }
+
+  private createResumeOverlay() {
+    const cam = this.cameras.main;
+    this.resumeOverlay = this.add
+      .container(0, 0)
+      .setDepth(3000)
+      .setScrollFactor(0)
+      .setVisible(false);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.6);
+    bg.fillRect(0, 0, cam.width, cam.height);
+
+    const midText = this.add
+      .text(cam.width / 2, cam.height / 2, "GET READY\n\n\n\nTAP TO CONTINUE", {
+        fontSize: "60px",
+        fontFamily: "monospace",
+        fontStyle: "bold",
+        align: "center",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+
+    this.resumeOverlay.add([bg, midText]);
+
+    const hitArea = this.add
+      .zone(0, 0, cam.width, cam.height)
+      .setOrigin(0, 0)
+      .setInteractive()
+      .setScrollFactor(0);
+
+    hitArea.on("pointerdown", () => {
+      this.hideResumeMenu();
     });
 
-    // Bấm phím J: Lập tức gọi ra 10 con quái để test skill (làm bao cát)
-    this.input.keyboard!.on("keydown-J", () => {
-      if (!this.gameOver && !this.paused) {
-        for (let i = 0; i < 10; i++) {
-          this.spawnEnemy();
-        }
-      }
-    });
+    this.resumeOverlay.add(hitArea);
+  }
 
-    // Bấm phím M: Lập tức sinh ra một hộp quà buff (EMP, Đóng băng...)
-    this.input.keyboard!.on("keydown-M", () => {
-      if (!this.gameOver && !this.paused) {
-        this.spawnBuffItem(this.player.x + 50, this.player.y);
-      }
-    });
+  private showResumeMenu() {
+    this.paused = true;
+    this.physics.pause();
+    this.resumeOverlay.setVisible(true);
+  }
+
+  private hideResumeMenu() {
+    this.paused = false;
+    this.physics.resume();
+    this.resumeOverlay.setVisible(false);
   }
 
   createUI() {
@@ -919,7 +1041,7 @@ export default class GameScene extends Phaser.Scene {
     });
     this.tooltipContainer.add([tooltipBg, this.tooltipText]);
 
-    // --- UI Boss: Large Health Bar in Center of Screen ---
+    // --- UI Boss ---
     this.bossHpBarBg = this.add
       .graphics()
       .setScrollFactor(0)
@@ -1001,7 +1123,7 @@ export default class GameScene extends Phaser.Scene {
         name: "Spring",
         val: Math.round((this.projectileSpeed - 1) * 5),
         max: 20,
-      }, // Convert 1.2 -> Lv1
+      },
       {
         key: "duplicator",
         icon: "icon_duplicator",
@@ -1014,7 +1136,14 @@ export default class GameScene extends Phaser.Scene {
         icon: "icon_luck",
         name: "Luck",
         val: Math.round((this.luck - 1) * 10),
-        max: 99,
+        max: 40,
+      },
+      {
+        key: "toastlvl",
+        icon: "icon_toast",
+        name: "Toast Level",
+        val: this.toastLevel,
+        max: 20,
       },
     ];
 
@@ -1065,7 +1194,8 @@ export default class GameScene extends Phaser.Scene {
       | "lightning"
       | "butter"
       | "cutlery"
-    )[] = ["aura", "shrapnel", "lightning", "butter", "cutlery"];
+      | "blender"
+    )[] = ["aura", "shrapnel", "lightning", "butter", "cutlery", "blender"];
 
     weaponKeys.forEach((key) => {
       const lv = this.skillManager.levels[key];
@@ -1270,14 +1400,27 @@ export default class GameScene extends Phaser.Scene {
     const y = this.player.y + Math.sin(angle) * spawnRadius;
 
     // --- BOSS SPAWN LOGIC ---
-    if (this.elapsed > 1 && r < 0.06 && !isGoldenCarton) {
-      enemy = new EspressoMachine(this, x, y, 1200 * bossHpMult, 150, 15 * dmgMult);
-      
-      this.currentBoss = enemy; 
-      
-    } else if (this.elapsed > 2 && r < 0.08 && !isGoldenCarton) {
-      enemy = new WashingMachine(this, x, y, 1500 * bossHpMult, 70, 20 * dmgMult);
-      
+    if (this.elapsed > 120 && r < 0.06 && !isGoldenCarton) {
+      enemy = new EspressoMachine(
+        this,
+        x,
+        y,
+        1200 * bossHpMult,
+        150,
+        15 * dmgMult,
+      );
+
+      this.currentBoss = enemy;
+    } else if (this.elapsed > 60 && r < 0.08 && !isGoldenCarton) {
+      enemy = new WashingMachine(
+        this,
+        x,
+        y,
+        1500 * bossHpMult,
+        70,
+        20 * dmgMult,
+      );
+
       if (!this.currentBoss || !this.currentBoss.active) {
         this.currentBoss = enemy;
       }
@@ -1287,12 +1430,12 @@ export default class GameScene extends Phaser.Scene {
       enemy = new BaseEnemy(this, x, y, 30 * hpMult, 250, 0, "GOLDEN_CARTON");
     }
     // --- NORMAL ENEMY TYPES ---
-    else if (r < 0.02) {
+    else if (r < 0.2) {
       enemy = new Microwave(this, x, y, 60 * hpMult, 150, 0);
-    } else if (r < 0.03) {
-      enemy = new Roomba(this, x, y, 25 * hpMult, 110, 2 * dmgMult);
-    } else if (r < 0.04) {
-      enemy = new RiceCooker(this, x, y, 180 * hpMult, 60, 10 * dmgMult);
+    } else if (r < 0.3) {
+      enemy = new Roomba(this, x, y, 30 * hpMult, 110, 7 * dmgMult);
+    } else if (r < 0.4) {
+      enemy = new RiceCooker(this, x, y, 180 * hpMult, 60, 14 * dmgMult);
     } else {
       enemy = new BaseEnemy(
         this,
@@ -1369,7 +1512,7 @@ export default class GameScene extends Phaser.Scene {
         if (this.gameOver) return;
 
         if (this.player.playAttackAnim) this.player.playAttackAnim();
-        this.playSoundEffect("shoot", 0.3);
+        this.playSoundEffect("shoot", 0.15);
 
         const bullet = new ToastBullet(
           this,
@@ -1433,7 +1576,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.player.hasShield) {
       this.player.hasShield = false;
       this.iFrameTimer = 0.5;
-      this.playSoundEffect("hit", 0.8);
+      this.playSoundEffect("shield_block", 0.4);
       this.createSparkVFX(player.x, player.y, 0xfde047);
 
       const angle = Phaser.Math.Angle.Between(
@@ -1517,7 +1660,7 @@ export default class GameScene extends Phaser.Scene {
   onPickupItem(_player: any, item: any) {
     const type = item.getData("type");
     item.destroy();
-    this.playSoundEffect("pickup", 0.8);
+    this.playSoundEffect("pickup", 0.3);
 
     let buffText = "";
     switch (type) {
@@ -1536,6 +1679,7 @@ export default class GameScene extends Phaser.Scene {
         this.espressoTimer = 6000;
         this.player.isHyper = true;
         buffText = "HYPER MODE!";
+        this.playSoundEffect("buff_hyper", 0.4);
         break;
       case "BUTTER":
         this.player.hasShield = true;
@@ -1573,6 +1717,7 @@ export default class GameScene extends Phaser.Scene {
   private triggerEMP() {
     const empRing = this.add.graphics();
     empRing.setDepth(199);
+    this.playSoundEffect("item_emp", 0.2);
 
     this.tweens.addCounter({
       from: 0,
@@ -1604,6 +1749,7 @@ export default class GameScene extends Phaser.Scene {
   private triggerWD40Pulse() {
     const frostRing = this.add.graphics();
     frostRing.setDepth(199);
+    this.playSoundEffect("item_freeze", 0.4);
 
     this.tweens.addCounter({
       from: 0,
@@ -1633,7 +1779,7 @@ export default class GameScene extends Phaser.Scene {
     const xpVal = (orb.getData("xp") as number) || 1;
     this.xp += xpVal;
 
-    this.playSoundEffect("pickup", 0.2 + (xpVal > 1 ? 0.2 : 0));
+    this.playSoundEffect("pickup", 0.1 + (xpVal > 1 ? 0.2 : 0));
     this.createSparkVFX(orb.x, orb.y, 0x38bdf8);
 
     // Return to pool by disabling body instead of calling orb.destroy()
@@ -1649,7 +1795,7 @@ export default class GameScene extends Phaser.Scene {
 
   showLevelUp() {
     this.paused = true;
-    this.playSoundEffect("level_up", 0.4);
+    this.playSoundEffect("level_up", 0.2);
     this.physics.pause();
 
     const baseUpgrades: Upgrade[] = [
@@ -1692,7 +1838,7 @@ export default class GameScene extends Phaser.Scene {
       },
       {
         id: "armor",
-        key: "maxhp",
+        key: "armor",
         label: "Steel Plating (Armor)",
         description: "-1 Damage Taken from enemies",
         icon: "icon_armor",
@@ -1703,20 +1849,8 @@ export default class GameScene extends Phaser.Scene {
         },
       },
       {
-        id: "regen",
-        key: "regen",
-        label: "Self-Repair (Regen)",
-        description: "+1 HP recovered per second",
-        icon: "icon_regen",
-        color: 0x22c55e,
-        apply: (s) => {
-          s.hpRegen += 1;
-          s.updateSkillHUD();
-        },
-      },
-      {
         id: "bracer",
-        key: "maxhp",
+        key: "bracer",
         label: "High-Tension Spring",
         description: "+10% Projectile Speed",
         icon: "icon_bracer",
@@ -1728,7 +1862,7 @@ export default class GameScene extends Phaser.Scene {
       },
       {
         id: "luck",
-        key: "maxhp",
+        key: "luck",
         label: "Lucky Charm (Clover)",
         description: "+10% Chance for rare drops",
         icon: "icon_luck",
@@ -1744,7 +1878,7 @@ export default class GameScene extends Phaser.Scene {
       baseUpgrades.push({
         id: "regen",
         key: "regen",
-        label: `Self-Repair (Lv.${this.hpRegen + 1})`,
+        label: `Self-Repair ${this.toRoman(this.hpRegen + 1)}`,
         description: `+1 HP recovered every ${4 - this.hpRegen} seconds`,
         icon: "icon_regen",
         color: 0x22c55e,
@@ -1755,10 +1889,10 @@ export default class GameScene extends Phaser.Scene {
       });
     }
 
-    if (this.projectileCount < 2) {
+    if (this.projectileCount < 1) {
       baseUpgrades.push({
         id: "duplicator",
-        key: "maxhp",
+        key: "duplicator",
         label: "Extra Slot (Duplicator)",
         description: "+1 Projectile fired per attack",
         icon: "icon_duplicator",
@@ -1770,7 +1904,7 @@ export default class GameScene extends Phaser.Scene {
       });
     }
 
-    if (this.toastLevel < 10) {
+    if (this.toastLevel < 20) {
       baseUpgrades.push({
         id: "toastlvl",
         key: "toastlvl",
@@ -1781,7 +1915,7 @@ export default class GameScene extends Phaser.Scene {
         apply: (s) => {
           s.toastLevel++;
           s.toastDmg += 2;
-          s.toastCooldown = Math.max(0.15, s.toastCooldown - 0.05);
+          s.toastCooldown = Math.max(0.3, s.toastCooldown - 0.05);
         },
       });
     }
@@ -1793,7 +1927,8 @@ export default class GameScene extends Phaser.Scene {
       | "lightning"
       | "butter"
       | "cutlery"
-    )[] = ["aura", "shrapnel", "lightning", "butter", "cutlery"];
+      | "blender"
+    )[] = ["aura", "shrapnel", "lightning", "butter", "cutlery", "blender"];
     const skillUpgrades: Upgrade[] = [];
 
     skillKeys.forEach((key) => {
@@ -1805,7 +1940,8 @@ export default class GameScene extends Phaser.Scene {
           id: `skill_${key}_${currentLvl + 1}`,
           key: key,
           label:
-            data.name + (currentLvl === 3 ? " [MAX]" : ` Lv.${currentLvl + 1}`),
+            data.name +
+            (currentLvl === 3 ? " [MAX]" : ` ${this.toRoman(currentLvl + 1)}`),
           description: nextTierData.desc,
           icon: data.icon,
           color: data.color,
@@ -1829,12 +1965,12 @@ export default class GameScene extends Phaser.Scene {
     const cx = cam.width / 2;
     const cy = cam.height / 2;
     const overlay = this.add.graphics().setScrollFactor(0);
-    overlay.fillStyle(0x000000, 0.85);
+    overlay.fillStyle(0x000000, 0.8);
     overlay.fillRect(0, 0, cam.width, cam.height);
     this.levelUpContainer.add(overlay);
     const title = this.add
-      .text(cx, cy - 140, `LEVEL ${this.level} - CHOOSE AN UPGRADE`, {
-        fontSize: "28px",
+      .text(cx, cy - 250, `LEVEL ${this.level} - CHOOSE AN UPGRADE`, {
+        fontSize: "42px",
         color: "#facc15",
         fontFamily: "monospace",
         fontStyle: "bold",
@@ -1845,66 +1981,118 @@ export default class GameScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.levelUpContainer.add(title);
 
-    picks.forEach((upgrade, i) => {
-      const by = cy - 60 + i * 85; // Card spacing
+    const cardW = 280;
+    const cardH = 380;
+    const spacing = 40;
+    const totalW = cardW * 3 + spacing * 2;
+    const startX = cx - totalW / 2 + cardW / 2;
 
-      // Draw card
+    picks.forEach((upgrade, i) => {
+      const bx = startX + i * (cardW + spacing);
+      const by = cy + 20; // Vị trí y trung tâm
+
       const bg = this.add.graphics().setScrollFactor(0);
       const mainColor = upgrade.color || 0x475569;
 
-      // Redraw style on hover/out
       const drawCard = (isHover: boolean) => {
         bg.clear();
         bg.fillStyle(isHover ? 0x1e293b : 0x0f172a, 0.95);
-        bg.fillRoundedRect(cx - 180, by - 35, 360, 70, 8);
-        bg.lineStyle(isHover ? 4 : 2, isHover ? 0xffffff : mainColor);
-        bg.strokeRoundedRect(cx - 180, by - 35, 360, 70, 8);
+        // Vẽ card dọc nhưng xếp hàng ngang
+        bg.fillRoundedRect(bx - cardW / 2, by - cardH / 2, cardW, cardH, 12);
+        bg.lineStyle(isHover ? 6 : 3, isHover ? 0xffffff : mainColor);
+        bg.strokeRoundedRect(bx - cardW / 2, by - cardH / 2, cardW, cardH, 12);
       };
       drawCard(false);
       this.levelUpContainer.add(bg);
 
-      // Add skill icon (if available)
+      // Icon to hơn ở phía trên card
       if (upgrade.icon) {
         const icon = this.add
-          .sprite(cx - 150, by, upgrade.icon)
+          .sprite(bx, by - 100, upgrade.icon)
+          .setScale(2) // Phóng to icon
           .setScrollFactor(0);
         this.levelUpContainer.add(icon);
       }
 
-      // Label and description text
-      const textStartX = upgrade.icon ? cx - 110 : cx - 160;
+      // Label (Tên skill)
       const lblTxt = this.add
-        .text(textStartX, by - 25, upgrade.label, {
-          fontSize: "18px",
+        .text(bx, by - 10, upgrade.label, {
+          fontSize: "22px",
           color: "#ffffff",
           fontFamily: "monospace",
           fontStyle: "bold",
+          align: "center",
+          wordWrap: { width: cardW - 20 },
         })
-        .setOrigin(0, 0)
+        .setOrigin(0.5, 0)
         .setScrollFactor(0);
+
+      // Description (Mô tả)
       const descTxt = this.add
-        .text(textStartX, by + 2, upgrade.description, {
-          fontSize: "14px",
+        .text(bx, by + 60, upgrade.description, {
+          fontSize: "16px",
           color: "#cbd5e1",
           fontFamily: "Arial",
+          align: "center",
+          wordWrap: { width: cardW - 40 },
         })
-        .setOrigin(0, 0)
+        .setOrigin(0.5, 0)
         .setScrollFactor(0);
-      this.levelUpContainer.add([lblTxt, descTxt]);
 
+      // Thêm dòng hướng dẫn phím bấm [1], [2], [3]
+      const keyHint = this.add
+        .text(bx, by + cardH / 2 - 30, `Press [${i + 1}]`, {
+          fontSize: "16px",
+          color: "#94a3b8",
+          fontFamily: "monospace",
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0);
+
+      this.levelUpContainer.add([lblTxt, descTxt, keyHint]);
+
+      // Vùng tương tác chuột
       const zone = this.add
-        .zone(cx, by, 360, 70)
+        .zone(bx, by, cardW, cardH)
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true });
+
       zone.on("pointerover", () => drawCard(true));
       zone.on("pointerout", () => drawCard(false));
-      zone.on("pointerdown", () => {
-        upgrade.apply(this);
-        this.hideLevelUp();
-      });
+      zone.on("pointerdown", () => this.executeUpgrade(upgrade));
+
       this.levelUpContainer.add(zone);
     });
     this.levelUpContainer.setVisible(true);
+
+    this.setupLevelUpControls(picks);
+  }
+
+  // Hàm hỗ trợ chọn upgrade
+  private executeUpgrade(upgrade: Upgrade) {
+    upgrade.apply(this);
+    this.cleanupLevelUpControls();
+    this.hideLevelUp();
+  }
+
+  // Thiết lập phím 1, 2, 3
+  private setupLevelUpControls(picks: Upgrade[]) {
+    this.levelUpKeys.forEach((key, index) => {
+      // Xóa các sự kiện cũ nếu có
+      key.removeAllListeners();
+
+      // Chỉ thêm sự kiện nếu có đủ số lượng upgrade tương ứng
+      if (picks[index]) {
+        key.once("down", () => {
+          this.executeUpgrade(picks[index]);
+        });
+      }
+    });
+  }
+
+  // Xóa sự kiện khi đóng bảng
+  private cleanupLevelUpControls() {
+    this.levelUpKeys.forEach((key) => key.removeAllListeners());
   }
 
   hideLevelUp() {
@@ -1917,17 +2105,84 @@ export default class GameScene extends Phaser.Scene {
   doGameOver() {
     this.gameOver = true;
     this.physics.pause();
+
     this.saveBestTimeScore();
-    const cam = this.cameras.main;
     const bestTime = this.getBestTime();
+
+    const cam = this.cameras.main;
+    const width = cam.width;
+    const height = cam.height;
+
+    const goContainer = this.add
+      .container(0, 0)
+      .setDepth(2000)
+      .setScrollFactor(0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.85);
+    bg.fillRect(0, 0, width, height);
+    goContainer.add(bg);
+
+    const title = this.add
+      .text(width / 2, height / 2 - 160, "GAME OVER", {
+        fontSize: "72px",
+        fontFamily: "monospace",
+        fontStyle: "bold",
+        color: "#f97316",
+      })
+      .setOrigin(0.5);
+
+    // Tính thời gian hiện tại
     const mins = Math.floor(bestTime / 60);
     const secs = Math.floor(bestTime % 60);
-    this.gameOverText.setText(
-      "GAME OVER\n Your Best Score: " +
-        `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}` +
-        " \nPress R to restart",
-    );
-    this.gameOverText.setPosition(cam.width / 2, cam.height / 2);
+    const currentTimeStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+    const currentMins = Math.floor(this.elapsed / 60);
+    const currentSecs = Math.floor(this.elapsed % 60);
+    const currentTime = `${String(currentMins).padStart(2, "0")}:${String(currentSecs).padStart(2, "0")}`;
+
+    // Hiển thị thông số (Thêm Best Time vào đây)
+    const statsStyle = {
+      fontSize: "24px",
+      fontFamily: "monospace",
+      color: "#ffffff",
+    };
+    const bestTxt = this.add
+      .text(width / 2, height / 2 - 40, `YOUR BEST SCORE: ${currentTimeStr}`, {
+        ...statsStyle,
+        color: "#facc15",
+      })
+      .setOrigin(0.5);
+    const timeTxt = this.add
+      .text(
+        width / 2,
+        height / 2 + 10,
+        `CURRENT TIME: ${currentTime}`,
+        statsStyle,
+      )
+      .setOrigin(0.5);
+
+    const killTxt = this.add
+      .text(width / 2, height / 2 + 60, `KILLS: ${this.kills}`, statsStyle)
+      .setOrigin(0.5);
+
+    // Nút Restart (Hình chữ nhật bo góc trắng như hình 5)
+    const btnBg = this.add.graphics();
+    btnBg.fillStyle(0xffffff, 1);
+    btnBg.fillRoundedRect(width / 2 - 140, height / 2 + 140, 280, 50, 10);
+
+    const restartTxt = this.add
+      .text(width / 2, height / 2 + 165, "PRESS R TO RESTART", {
+        fontSize: "20px",
+        fontFamily: "monospace",
+        fontStyle: "bold",
+        color: "#000000",
+      })
+      .setOrigin(0.5);
+
+    goContainer.add([title, bestTxt, timeTxt, killTxt, btnBg, restartTxt]);
+    goContainer.setAlpha(0);
+    this.tweens.add({ targets: goContainer, alpha: 1, duration: 500 });
   }
 
   saveBestTimeScore() {
@@ -1952,17 +2207,24 @@ export default class GameScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
+    const hpBarWidth = Math.max(160, this.maxHp * 1.5);
     this.hpBar.clear();
-    this.hpBar.fillStyle(0x333333);
-    this.hpBar.fillRect(16, 36, 160, 14);
-    this.hpBar.fillStyle(0x44cc44);
-    this.hpBar.fillRect(16, 36, 160 * (this.hp / this.maxHp), 14);
+    this.hpBar.fillStyle(0x000000, 0.5);
+    this.hpBar.fillRoundedRect(16, 36, hpBarWidth, 16, 8);
+    this.hpBar.fillStyle(0xef4444, 0.8);
+    this.hpBar.fillRoundedRect(
+      16,
+      36,
+      hpBarWidth * (this.hp / this.maxHp),
+      16,
+      8,
+    );
     this.hpText.setText(`HP: ${this.hp}/${this.maxHp}`);
 
     this.xpBar.clear();
     this.xpBar.fillStyle(0x333333);
     this.xpBar.fillRect(0, height - 10, width, 10);
-    this.xpBar.fillStyle(0x4488ff);
+    this.xpBar.fillStyle(0xd946ef, 0.8);
     this.xpBar.fillRect(0, height - 10, width * (this.xp / this.xpToNext), 10);
 
     const mins = Math.floor(this.elapsed / 60);
@@ -1971,7 +2233,7 @@ export default class GameScene extends Phaser.Scene {
       `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
     );
 
-    this.levelText.setText(`Lv.${this.level}  Toast:${this.toastLevel}`);
+    this.levelText.setText(`LVL ${this.level}`);
 
     // --- UPDATE BOSS HEALTH BAR ---
     if (this.currentBoss && this.currentBoss.active) {
@@ -2012,9 +2274,7 @@ export default class GameScene extends Phaser.Scene {
 
     // --- UPDATE FPS ---
     const currentFps = Math.round(this.game.loop.actualFps);
-    this.fpsText.setText(
-      `FPS: ${currentFps} | Enemy: ${this.enemies.countActive(true)}`,
-    );
+    this.fpsText.setText(`FPS: ${currentFps}`);
 
     if (currentFps >= 55) {
       this.fpsText.setColor("#22c55e");
@@ -2055,6 +2315,14 @@ export default class GameScene extends Phaser.Scene {
     );
     if (dist < 25) {
       this.takePlayerDamage(2);
+      DamageNumber.create(
+        this,
+        this.player.x,
+        this.player.y - 30,
+        -2,
+        "player_damage",
+        { fontSize: 24 },
+      );
     }
   }
 

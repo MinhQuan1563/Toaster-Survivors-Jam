@@ -17,6 +17,7 @@ export class SkillManager {
     lightning: 0,
     butter: 0,
     cutlery: 0,
+    blender: 0,
   };
 
   public static readonly SKILL_DATA = {
@@ -89,17 +90,20 @@ export class SkillManager {
       color: 0xfef08a,
       tiers: [
         {
-          desc: "Drops 1 puddle every 5s\nSlows enemies",
-          shortDesc: "Lv.1: 1 Puddle, Slows enemies",
-        },
-        { desc: "Drops 2 puddles at once", shortDesc: "Lv.2: 2 Puddles" },
-        {
-          desc: "Puddles last 5s and\nare wider",
-          shortDesc: "Lv.3: Wider, lasts longer",
+          desc: "Leave a butter trail that slows enemies",
+          shortDesc: "Lv.1: Slow trail",
         },
         {
-          desc: "MUTATION: Black Hole!\nPuddles move to player & deal DMG",
-          shortDesc: "MAX: Moves & deals heavy damage",
+          desc: "Butter also deals small damage over time",
+          shortDesc: "Lv.2: Slow + DoT",
+        },
+        {
+          desc: "Trail is wider and slows more",
+          shortDesc: "Lv.3: Wider, stronger slow",
+        },
+        {
+          desc: "MAX: Trail lasts longer and deals high damage",
+          shortDesc: "MAX: Long trail, high dmg",
         },
       ],
     },
@@ -126,7 +130,32 @@ export class SkillManager {
         },
       ],
     },
+    blender: {
+      name: "Blender Blades",
+      icon: "icon_blender",
+      color: 0x94a3b8,
+      tiers: [
+        {
+          desc: "2 blades spin around you and hit enemies",
+          shortDesc: "Lv.1: 2 spinning blades",
+        },
+        {
+          desc: "Add 1 blade and increase damage",
+          shortDesc: "Lv.2: 3 blades, more dmg",
+        },
+        { desc: "4 blades spin faster", shortDesc: "Lv.3: 4 fast blades" },
+        {
+          desc: "MAX: Bigger blades with longer range",
+          shortDesc: "MAX: Big blades, long range",
+        },
+      ],
+    },
   };
+
+  private lastButterPos: Phaser.Math.Vector2 = new Phaser.Math.Vector2(0, 0);
+  private butterDistanceCounter: number = 0;
+  private readonly BUTTER_THRESHOLD: number = 35;
+  private blenderRotation: number = 0;
 
   // Internal variables
   private auraGraphics: Phaser.GameObjects.Graphics;
@@ -138,6 +167,7 @@ export class SkillManager {
   public crumbsGroup: Phaser.Physics.Arcade.Group;
   public butterGroup: Phaser.Physics.Arcade.Group;
   public cutleryGroup: Phaser.Physics.Arcade.Group;
+  private blenderSprites: Phaser.Physics.Arcade.Sprite[] = [];
 
   private burnedEnemies: Map<BaseEnemy, number> = new Map();
   public stunnedEnemies: Map<BaseEnemy, number> = new Map();
@@ -221,24 +251,25 @@ export class SkillManager {
       this.butterGroup,
       scene.enemies,
       (b: any, e: any) => {
-        const butter = b as Phaser.Physics.Arcade.Sprite;
         const enemy = e as BaseEnemy;
-        if (!butter.active || !enemy.active) return;
+        const lv = this.levels.butter;
 
-        // Slow down the enemy
-        enemy.speedModifier = 0.4; // 60% slow
+        // Làm chậm
+        enemy.speedModifier = lv >= 3 ? 0.3 : 0.5;
+        this.scene.time.delayedCall(100, () => {
+          if (enemy.active) enemy.speedModifier = 1;
+        });
 
-        // Max level deals damage over time
-        if (this.levels.butter === 4) {
+        // Sát thương (Cấp 2 trở lên)
+        if (lv >= 2) {
           let lastTick = enemy.getData("butterTick") || 0;
           if (this.scene.time.now - lastTick > 500) {
-            // dmg every 0.5s
             enemy.setData("butterTick", this.scene.time.now);
-            enemy.takeDamage(10);
+            const dmg = lv === 4 ? 30 : 10;
+            enemy.takeDamage(dmg);
             if (typeof DamageNumber !== "undefined")
-              DamageNumber.create(this.scene, enemy.x, enemy.y, 10, "damage", {
-                color: "#facc15",
-                fontSize: 16,
+              DamageNumber.create(this.scene, enemy.x, enemy.y, dmg, "damage", {
+                color: "#fef08a",
               });
           }
         }
@@ -250,9 +281,10 @@ export class SkillManager {
     const dt = delta / 1000;
     this.updateAura(delta);
     this.updateLightning(delta);
-    this.updateButter(delta);
     this.updateCutlery(delta);
     this.updateDebuffs(delta);
+    this.updateButterProgress();
+    this.updateBlender(delta);
 
     // Cleanup projectiles
     [this.crumbsGroup, this.cutleryGroup].forEach((group) => {
@@ -345,7 +377,7 @@ export class SkillManager {
   }
 
   // ==========================================
-  // 2. SHRAPNEL (Cải thiện Hình ảnh)
+  // 2. SHRAPNEL
   // ==========================================
   public triggerShrapnel(x: number, y: number, baseDmg: number) {
     if (this.levels.shrapnel === 0) return;
@@ -363,6 +395,7 @@ export class SkillManager {
     for (let i = 0; i < crumbCount; i++) {
       const angle = ((Math.PI * 2) / crumbCount) * i + Math.random() * 0.5;
       const speed = Phaser.Math.Between(300, 400) * this.scene.projectileSpeed;
+      this.scene.playSoundEffect("skill_shrapnel", 0.1);
 
       // [FIX] Use new 'crumb' texture
       const crumb = this.crumbsGroup.create(
@@ -422,7 +455,7 @@ export class SkillManager {
       Phaser.Utils.Array.Shuffle(allEnemies);
       const targets = allEnemies.slice(0, strikeCount);
 
-      this.scene.playSoundEffect("hit", 0.6); // Lightning sound
+      this.scene.playSoundEffect("skill_lightning", 0.2); // Lightning sound
 
       targets.forEach((target) => {
         // Draw ZigZag Lightning
@@ -493,61 +526,46 @@ export class SkillManager {
   // ==========================================
   // 4. BUTTER PUDDLE (Slow Zone)
   // ==========================================
-  private updateButter(delta: number) {
+  private updateButterProgress() {
     if (this.levels.butter === 0) return;
+    const player = this.scene.player;
+    const dist = Phaser.Math.Distance.Between(
+      player.x,
+      player.y,
+      this.lastButterPos.x,
+      this.lastButterPos.y,
+    );
+    this.butterDistanceCounter += dist;
+    this.lastButterPos.set(player.x, player.y);
 
-    this.butterTimer -= delta;
-    if (this.butterTimer <= 0) {
-      this.butterTimer = 5000; // Drops every 5s
-
-      let puddleCount = 1;
-      if (this.levels.butter >= 2) puddleCount = 2;
-      puddleCount += this.scene.projectileCount; // Duplicator bonus
-
-      let duration = 3;
-      if (this.levels.butter >= 3) duration = 5;
-
-      const isMax = this.levels.butter === 4;
-
-      for (let i = 0; i < puddleCount; i++) {
-        // Drop randomly around player
-        const offsetX = Phaser.Math.Between(-20, 20); // Tight grouping
-        const offsetY = Phaser.Math.Between(0, 20); // Slightly behind/under
-        const px = this.scene.player.x + offsetX;
-        const py = this.scene.player.y + offsetY;
-
-        // Create puddle sprite (using graphics generated texture)
-        const butter = this.butterGroup.create(
-          px,
-          py,
-          "sprite_butter",
-        ) as Phaser.Physics.Arcade.Sprite;
-        butter.setDepth(5); // Under enemies
-        butter.setAlpha(0.8);
-
-        // Scale up based on level
-        const scale = this.levels.butter >= 3 ? 1.5 : 1;
-        butter.setScale(scale);
-
-        // Set circular physics body for overlap
-        butter.setCircle(15);
-
-        butter.setData("life", duration);
-
-        // Pop-in animation
-        butter.setScale(0);
-        this.scene.tweens.add({
-          targets: butter,
-          scale: scale,
-          duration: 300,
-          ease: "Back.out",
-        });
-
-        if (isMax) {
-          butter.setTint(0xffaa00); // Darker butter for max level (Black Hole)
-        }
-      }
+    if (this.butterDistanceCounter >= this.BUTTER_THRESHOLD) {
+      this.butterDistanceCounter = 0;
+      this.spawnButterPuddle(player.x, player.y);
     }
+
+    this.butterGroup.getChildren().forEach((b: any) => {
+      if (b.active) {
+        b.alpha -= this.levels.butter === 4 ? 0.002 : 0.006; // Cấp MAX tồn tại lâu hơn
+        if (b.alpha <= 0) b.destroy();
+      }
+    });
+  }
+
+  private spawnButterPuddle(x: number, y: number) {
+    const butter = this.butterGroup.create(
+      x,
+      y + 10,
+      "sprite_butter",
+    ) as Phaser.Physics.Arcade.Sprite;
+    butter.setDepth(5).setAlpha(0.8);
+    const scaleBase = this.levels.butter >= 3 ? 1.2 : 0.7;
+    butter.setScale(0);
+    this.scene.tweens.add({
+      targets: butter,
+      scale: scaleBase,
+      duration: 200,
+      ease: "Back.out",
+    });
   }
 
   // ==========================================
@@ -584,7 +602,7 @@ export class SkillManager {
       const speed = 600 * this.scene.projectileSpeed;
       const spread = 0.4; // Angle spread for fan shape
 
-      this.scene.playSoundEffect("shoot", 0.5);
+      this.scene.playSoundEffect("skill_cutlery", 0.2);
 
       for (let i = 0; i < knifeCount; i++) {
         // Calculate fan angle
@@ -614,6 +632,56 @@ export class SkillManager {
   }
 
   // ==========================================
+  // 6. BLENDER BLADES
+  // ==========================================
+  private updateBlender(delta: number) {
+    if (this.levels.blender === 0) return;
+
+    const player = this.scene.player;
+    const count =
+      this.levels.blender === 1 ? 2 : this.levels.blender === 2 ? 3 : 4;
+    const radius = this.levels.blender === 4 ? 140 : 100;
+    const speed = (this.levels.blender >= 3 ? 0.004 : 0.003) * delta;
+
+    this.blenderRotation += speed;
+
+    while (this.blenderSprites.length < count) {
+      const s = this.scene.physics.add.sprite(0, 0, "sprite_blender");
+      s.setDepth(15);
+      this.blenderSprites.push(s);
+      this.scene.physics.add.overlap(
+        s,
+        this.scene.enemies,
+        (blade: any, enemy: any) => {
+          let lastHit = enemy.getData("blenderHit") || 0;
+          if (this.scene.time.now - lastHit > 300) {
+            enemy.setData("blenderHit", this.scene.time.now);
+            const dmg = 5 + this.levels.blender * 5;
+            enemy.takeDamage(dmg);
+            this.scene.createSparkVFX(enemy.x, enemy.y, 0x94a3b8);
+
+            if (typeof DamageNumber !== "undefined") {
+              DamageNumber.create(this.scene, enemy.x, enemy.y, dmg, "damage", {
+                color: "#94a3b8",
+                fontSize: 14,
+              });
+            }
+          }
+        },
+      );
+    }
+
+    this.blenderSprites.forEach((s, i) => {
+      const angle = this.blenderRotation + i * ((Math.PI * 2) / count);
+      s.x = player.x + Math.cos(angle) * radius;
+      s.y = player.y + Math.sin(angle) * radius;
+      s.rotation = angle + Math.PI / 2;
+      if (this.levels.blender === 4) s.setScale(1.8).setTint(0xffffff);
+      else s.setScale(1.2);
+    });
+  }
+
+  // ==========================================
   // HANDLE STATUS EFFECTS
   // ==========================================
   private updateDebuffs(delta: number) {
@@ -636,8 +704,24 @@ export class SkillManager {
       } else {
         this.burnedEnemies.set(enemy, newTime);
         if (Math.random() < 0.1) {
-          enemy.takeDamage(1);
+          const burnDmg = 1;
+          enemy.takeDamage(burnDmg);
+          this.scene.playSoundEffect("skill_burn", 0.1);
           this.scene.createSparkVFX(enemy.x, enemy.y, 0xf97316);
+
+          if (typeof DamageNumber !== "undefined") {
+            DamageNumber.create(
+              this.scene,
+              enemy.x,
+              enemy.y,
+              burnDmg,
+              "damage",
+              {
+                color: "#f97316",
+                fontSize: 12,
+              },
+            );
+          }
         }
       }
     }

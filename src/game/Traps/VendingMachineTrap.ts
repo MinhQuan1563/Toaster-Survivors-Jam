@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import GameScene from "../GameScene";
+import { DamageNumber } from "../DamageNumber";
 
 export class VendingMachineTrap extends Phaser.GameObjects.Container {
   private isActivated: boolean = false;
@@ -219,6 +220,7 @@ export class VendingMachineTrap extends Phaser.GameObjects.Container {
     const player = this.sceneRef.player;
     const shockDamage = 5;
     const shockDuration = Phaser.Math.Between(1, 2); // 1-2 seconds
+    DamageNumber.create(this.sceneRef, player.x, player.y - 40, -shockDamage, "player_damage", { fontSize: 32 });
 
     // Deal damage
     this.sceneRef.hp -= shockDamage;

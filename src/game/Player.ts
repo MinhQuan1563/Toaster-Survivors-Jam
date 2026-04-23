@@ -195,10 +195,7 @@ export class Player extends Phaser.GameObjects.Container {
         (this.currentFaceIndex + 1) % this.faceList.length;
     }
 
-    const newText =
-      isAttacking || this.isHyper
-        ? ">_<"
-        : this.faceList[this.currentFaceIndex];
+    const newText = this.faceList[this.currentFaceIndex];
     const newColor =
       isAttacking || this.isHyper
         ? this.isHyper

@@ -39,9 +39,6 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     this.damage = damage;
     this.enemyType = type;
 
-    // this.visual = scene.add.graphics();
-    // this.add(this.visual);
-
     if (this.constructor.name === "BaseEnemy") {
       const texKey =
         type === "GOLDEN_CARTON" ? "tex_golden_carton" : "tex_carton";
@@ -58,8 +55,6 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     body.setCollideWorldBounds(true);
     body.setSize(40, 40);
     body.setOffset(-20, -20);
-
-    // this.drawEnemy();
   }
 
   public setVelocity(x: number, y: number) {
@@ -74,7 +69,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
 
     this.hp -= amount;
 
-    this.sceneRef.playSoundEffect("hit", 0.3);
+    this.sceneRef.playSoundEffect("hit", 0.15);
     this.sceneRef.createSparkVFX(this.x, this.y);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -85,7 +80,10 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
       if (this.active) this.visual.setAlpha(1);
     });
 
-    if (this.hp <= 0) this.die();
+    if (this.hp <= 0) {
+      this.sceneRef.kills++;
+      this.die();
+    }
   }
 
   protected dropXp() {
@@ -109,7 +107,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     }
 
     this.dropXp();
-    this.sceneRef.playSoundEffect("explode", 0.2);
+    this.sceneRef.playSoundEffect("explode", 0.1);
 
     const explosionScale = this.isBoss ? 3 : 1;
     this.sceneRef.createExplosionVFX(this.x, this.y, explosionScale);
