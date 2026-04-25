@@ -221,6 +221,7 @@ export class VendingMachineTrap extends Phaser.GameObjects.Container {
     const shockDamage = 5;
     const shockDuration = Phaser.Math.Between(1, 2); // 1-2 seconds
     DamageNumber.create(this.sceneRef, player.x, player.y - 40, -shockDamage, "player_damage", { fontSize: 32 });
+    const shockDurationMs = shockDuration * 1000;
 
     // Deal damage
     this.sceneRef.hp -= shockDamage;
@@ -245,12 +246,15 @@ export class VendingMachineTrap extends Phaser.GameObjects.Container {
       targets: player,
       alpha: { from: 0.5, to: 1 },
       duration: 100,
-      repeat: (shockDuration * 10) - 1,
+      repeat: Math.floor(shockDurationMs / 200) - 1,
       yoyo: true,
+      onComplete: () => {
+        player.setAlpha(1);
+      }
     });
 
     // Unfreeze player after stun duration
-    this.sceneRef.time.delayedCall(shockDuration * 500, () => {
+    this.sceneRef.time.delayedCall(shockDurationMs, () => {
       body.setVelocity(originalVelocityX, originalVelocityY);
       player.setAlpha(1);
       this.shocked = false;

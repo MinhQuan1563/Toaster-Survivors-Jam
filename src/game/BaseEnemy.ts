@@ -29,7 +29,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     hp: number,
     speed: number,
     damage: number,
-    type: string = "CARTON",
+    type: string = "",
   ) {
     super(scene, x, y);
     this.sceneRef = scene;
@@ -39,7 +39,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     this.damage = damage;
     this.enemyType = type;
 
-    if (this.constructor.name === "BaseEnemy") {
+    if (type === "CARTON" || type === "GOLDEN_CARTON") {
       const texKey =
         type === "GOLDEN_CARTON" ? "tex_golden_carton" : "tex_carton";
       this.visual = scene.add.sprite(0, 0, texKey) as any;
@@ -129,7 +129,7 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
   update(_time: number, _delta: number) {
     this.animFrame++;
 
-    if (this.constructor.name === "BaseEnemy") {
+    if (this.enemyType === "CARTON" || this.enemyType === "GOLDEN_CARTON") {
       const player = this.sceneRef.player;
       const currentSpeed = this.speed * this.speedModifier;
       this.visual.y = Math.sin(this.animFrame * 0.1) * 3;
@@ -183,77 +183,5 @@ export class BaseEnemy extends Phaser.GameObjects.Container {
     this.speedModifier = 1;
   }
 
-  protected drawEnemy() {
-    // if (this.constructor.name === "BaseEnemy") return;
-
-    // const g = this.visual;
-    // g.clear();
-    // // const bob = Math.sin(this.animFrame * 0.1) * 3;
-
-    // if (this.constructor.name !== "BaseEnemy") return;
-
-    // const isGolden = this.enemyType === "GOLDEN_CARTON";
-    // const mainColor = isGolden ? 0xfacc15 : 0xb45309;
-    // const darkColor = isGolden ? 0xca8a04 : 0x78350f;
-    // const tapeColor = isGolden ? 0xffffff : 0xfde047;
-
-    // g.fillStyle(mainColor);
-    // g.fillRoundedRect(-18, -18, 36, 36, 4);
-    // g.lineStyle(3, darkColor);
-    // g.strokeRoundedRect(-18, -18, 36, 36, 4);
-
-    // g.fillStyle(darkColor);
-    // g.beginPath();
-    // g.moveTo(-18, -18);
-    // g.lineTo(-26, -28);
-    // g.lineTo(0, -18);
-    // g.fillPath();
-    // g.strokePath();
-    // g.beginPath();
-    // g.moveTo(18, -18);
-    // g.lineTo(26, -28);
-    // g.lineTo(0, -18);
-    // g.fillPath();
-    // g.strokePath();
-
-    // g.fillStyle(tapeColor);
-    // g.fillRect(-5, -18, 10, 36);
-
-    // g.fillStyle(0x000000);
-    // if (isGolden) {
-    //   g.lineStyle(3, 0x000000);
-    //   g.beginPath();
-    //   g.moveTo(-10, -4);
-    //   g.lineTo(-4, -10);
-    //   g.strokePath();
-    //   g.beginPath();
-    //   g.moveTo(10, -4);
-    //   g.lineTo(4, -10);
-    //   g.strokePath();
-
-    //   if (this.animFrame % 20 < 10) {
-    //     g.fillStyle(0x38bdf8);
-    //     g.fillCircle(14, -12, 3);
-    //   }
-
-    //   // --- Draw a large red exclamation mark when it's panicking ---
-    //   if (this.goldenState === "SURPRISED") {
-    //     g.fillStyle(0xff0000);
-    //     g.fillRoundedRect(-4, -45, 8, 14, 2);
-    //     g.fillCircle(0, -25, 4);
-    //   }
-    // } else {
-    //   g.lineStyle(3, 0x000000);
-    //   g.beginPath();
-    //   g.moveTo(-10, -10);
-    //   g.lineTo(-4, -4);
-    //   g.strokePath();
-    //   g.beginPath();
-    //   g.moveTo(10, -10);
-    //   g.lineTo(4, -4);
-    //   g.strokePath();
-    //   g.fillRect(-8, -4, 4, 4);
-    //   g.fillRect(4, -4, 4, 4);
-    // }
-  }
+  protected drawEnemy() {}
 }

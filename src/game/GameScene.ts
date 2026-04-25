@@ -348,14 +348,37 @@ export default class GameScene extends Phaser.Scene {
     this.blackout = new Blackout(this, this.player, {
       minDuration: 5,
       maxDuration: 10,
-      visionRadius: 120,
-      minInterval: 10,
-      maxInterval: 30,
+      visionRadius: 150,
+      minInterval: 50,
+      maxInterval: 110,
       enabled: true,
     });
 
     this.input.keyboard!.on("keydown-R", () => {
       if (this.gameOver) this.scene.restart();
+    });
+
+    this.input.keyboard!.on("keydown-K", () => {
+      if (!this.gameOver && !this.paused) {
+        this.level++;
+        this.showLevelUp();
+      }
+    });
+
+    // Bấm phím J: Lập tức gọi ra 10 con quái để test skill (làm bao cát)
+    this.input.keyboard!.on("keydown-J", () => {
+      if (!this.gameOver && !this.paused) {
+        for (let i = 0; i < 10; i++) {
+          this.spawnEnemy();
+        }
+      }
+    });
+
+    // Bấm phím M: Lập tức sinh ra một hộp quà buff (EMP, Đóng băng...)
+    this.input.keyboard!.on("keydown-M", () => {
+      if (!this.gameOver && !this.paused) {
+        this.spawnBuffItem(this.player.x + 50, this.player.y);
+      }
     });
 
     this.createResumeOverlay();
@@ -613,7 +636,7 @@ export default class GameScene extends Phaser.Scene {
         icon: "icon_toast",
         name: "Toast Level",
         val: this.toastLevel,
-        max: 20,
+        max: 16,
       },
     ];
 
@@ -910,7 +933,7 @@ export default class GameScene extends Phaser.Scene {
 
     // --- SCALING LOGIC (Enemy) ---
     const minutesSurvived = Math.floor(this.elapsed / 60);
-    const hpMult = 1 + minutesSurvived * 0.5;
+    const hpMult = 1 + minutesSurvived * 0.2;
     const dmgMult = 1 + minutesSurvived * 0.2;
     // Boss Scaling
     const bossHpMult = 1 + minutesSurvived * 0.8;
@@ -923,7 +946,7 @@ export default class GameScene extends Phaser.Scene {
     const y = this.player.y + Math.sin(angle) * spawnRadius;
 
     // --- BOSS SPAWN LOGIC ---
-    if (this.elapsed > 120 && r < 0.06 && !isGoldenCarton) {
+    if (this.elapsed > 120 && r < 0.02 && !isGoldenCarton) {
       enemy = new EspressoMachine(
         this,
         x,
@@ -934,7 +957,7 @@ export default class GameScene extends Phaser.Scene {
       );
 
       this.currentBoss = enemy;
-    } else if (this.elapsed > 60 && r < 0.08 && !isGoldenCarton) {
+    } else if (this.elapsed > 60 && r < 0.04 && !isGoldenCarton) {
       enemy = new WashingMachine(
         this,
         x,
@@ -1030,8 +1053,7 @@ export default class GameScene extends Phaser.Scene {
     const totalShots = 1 + this.projectileCount;
 
     for (let i = 0; i < totalShots; i++) {
-      // Fire multiple toasts consecutively with a slight delay (150ms)
-      this.time.delayedCall(i * 150, () => {
+      this.time.delayedCall(i * 40, () => {
         if (this.gameOver) return;
 
         if (this.player.playAttackAnim) this.player.playAttackAnim();
@@ -1371,7 +1393,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
-      this.xpToNext = Math.floor(this.xpToNext * 1.5);
+      this.xpToNext = this.xpToNext + 10 + (this.level * 5);
       this.showLevelUp();
     }
   }
@@ -1492,12 +1514,12 @@ export default class GameScene extends Phaser.Scene {
         id: "toastlvl",
         key: "toastlvl",
         label: "High-Heat Toast Core",
-        description: "+2 Toast Damage\n-0.05s Cooldown",
+        description: "+5 Toast Damage\n-0.05s Cooldown",
         icon: "icon_toast",
         color: 0xf97316,
         apply: (s) => {
           s.toastLevel++;
-          s.toastDmg += 2;
+          s.toastDmg += 5;
           s.toastCooldown = Math.max(0.3, s.toastCooldown - 0.05);
         },
       });
@@ -1857,7 +1879,7 @@ export default class GameScene extends Phaser.Scene {
 
     // --- UPDATE FPS ---
     const currentFps = Math.round(this.game.loop.actualFps);
-    this.fpsText.setText(`FPS: ${currentFps}`);
+    this.fpsText.setText(`FPS: ${currentFps} || Enemies: ${this.enemies.countActive()}`);
 
     if (currentFps >= 55) {
       this.fpsText.setColor("#22c55e");
