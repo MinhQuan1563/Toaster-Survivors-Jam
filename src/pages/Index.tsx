@@ -16,7 +16,7 @@ const Index = () => {
       width: GAME_CONFIG.CANVAS_WIDTH,
       height: GAME_CONFIG.CANVAS_HEIGHT,
       parent: containerRef.current,
-      backgroundColor: "#0f172a", // Chuyển màu nền React cũ vào thẳng Phaser
+      backgroundColor: "#0f172a",
       physics: {
         default: "arcade",
         arcade: { debug: false }
@@ -25,7 +25,7 @@ const Index = () => {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
-      scene: [MainMenuScene, GameScene], // MainMenuScene chạy đầu tiên
+      scene: [MainMenuScene, GameScene],
     };
 
     gameRef.current = new Phaser.Game(config);
