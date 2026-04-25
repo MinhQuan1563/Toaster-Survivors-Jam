@@ -49,7 +49,7 @@ export default class GameScene extends Phaser.Scene {
   toastDmg = 15;
   toastCooldown = 1.1;
   xp = 0;
-  xpToNext = 10;
+  xpToNext = 2;
   level = 1;
   spawnTimer = 0;
   elapsed = 0;
@@ -130,6 +130,8 @@ export default class GameScene extends Phaser.Scene {
   // Intro state
   private resumeOverlay!: Phaser.GameObjects.Container;
   public kills: number = 0;
+  private bossWashingMachineSpawned: boolean = false;
+  private bossEspressoSpawned: boolean = false;
 
   constructor() {
     super({ key: "GameScene" });
@@ -233,7 +235,7 @@ export default class GameScene extends Phaser.Scene {
     this.toastDmg = 15;
     this.toastCooldown = 1.1;
     this.xp = 0;
-    this.xpToNext = 10;
+    this.xpToNext = 2;
     this.level = 1;
     this.spawnTimer = 0;
     this.elapsed = 0;
@@ -254,6 +256,8 @@ export default class GameScene extends Phaser.Scene {
     this.projectileCount = 0;
     this.luck = 1;
     this.kills = 0;
+    this.bossWashingMachineSpawned = false;
+    this.bossEspressoSpawned = false;
 
     this.sound.play("bgm_battle", { loop: true, volume: 0.1 });
 
@@ -351,34 +355,11 @@ export default class GameScene extends Phaser.Scene {
       visionRadius: 150,
       minInterval: 50,
       maxInterval: 110,
-      enabled: true,
+      enabled: false,
     });
 
     this.input.keyboard!.on("keydown-R", () => {
       if (this.gameOver) this.scene.restart();
-    });
-
-    this.input.keyboard!.on("keydown-K", () => {
-      if (!this.gameOver && !this.paused) {
-        this.level++;
-        this.showLevelUp();
-      }
-    });
-
-    // Bấm phím J: Lập tức gọi ra 10 con quái để test skill (làm bao cát)
-    this.input.keyboard!.on("keydown-J", () => {
-      if (!this.gameOver && !this.paused) {
-        for (let i = 0; i < 10; i++) {
-          this.spawnEnemy();
-        }
-      }
-    });
-
-    // Bấm phím M: Lập tức sinh ra một hộp quà buff (EMP, Đóng băng...)
-    this.input.keyboard!.on("keydown-M", () => {
-      if (!this.gameOver && !this.paused) {
-        this.spawnBuffItem(this.player.x + 50, this.player.y);
-      }
     });
 
     this.createResumeOverlay();
@@ -635,7 +616,7 @@ export default class GameScene extends Phaser.Scene {
         key: "toastlvl",
         icon: "icon_toast",
         name: "Toast Level",
-        val: this.toastLevel,
+        val: this.toastLevel > 1 ? this.toastLevel : 0,
         max: 16,
       },
     ];
@@ -932,11 +913,11 @@ export default class GameScene extends Phaser.Scene {
     let enemy: any;
 
     // --- SCALING LOGIC (Enemy) ---
-    const minutesSurvived = Math.floor(this.elapsed / 60);
-    const hpMult = 1 + minutesSurvived * 0.2;
+    const minutesSurvived = Math.floor(this.elapsed / 120);
+    const hpMult = 1 + minutesSurvived * 0.1;
     const dmgMult = 1 + minutesSurvived * 0.2;
     // Boss Scaling
-    const bossHpMult = 1 + minutesSurvived * 0.8;
+    const bossHpMult = 1 + minutesSurvived * 0.1;
 
     // --- GOLDEN CARTON SPAWN LOGIC ---
     const isGoldenCarton = r < 0.03 * this.luck;
@@ -945,28 +926,27 @@ export default class GameScene extends Phaser.Scene {
     const x = this.player.x + Math.cos(angle) * spawnRadius;
     const y = this.player.y + Math.sin(angle) * spawnRadius;
 
+    const isGuaranteedEspresso = this.elapsed >= 120 && !this.bossEspressoSpawned;
+    const isGuaranteedWashing = this.elapsed >= 60 && !this.bossWashingMachineSpawned;
+
     // --- BOSS SPAWN LOGIC ---
-    if (this.elapsed > 120 && r < 0.02 && !isGoldenCarton) {
+    if (isGuaranteedEspresso || (this.elapsed > 120 && r < 0.02 && !isGoldenCarton)) {
+      if (isGuaranteedEspresso) this.bossEspressoSpawned = true;
+      
       enemy = new EspressoMachine(
-        this,
-        x,
-        y,
-        1200 * bossHpMult,
-        150,
-        15 * dmgMult,
+        this, x, y,
+        1200 * bossHpMult, 150, 15 * dmgMult
       );
-
       this.currentBoss = enemy;
-    } else if (this.elapsed > 60 && r < 0.04 && !isGoldenCarton) {
+    } 
+    else if (isGuaranteedWashing || (this.elapsed > 60 && r < 0.04 && !isGoldenCarton)) {
+      if (isGuaranteedWashing) this.bossWashingMachineSpawned = true;
+      
       enemy = new WashingMachine(
-        this,
-        x,
-        y,
-        1500 * bossHpMult,
-        70,
-        20 * dmgMult,
+        this, x, y,
+        1500 * bossHpMult, 70, 20 * dmgMult
       );
-
+      
       if (!this.currentBoss || !this.currentBoss.active) {
         this.currentBoss = enemy;
       }
@@ -1393,7 +1373,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
-      this.xpToNext = this.xpToNext + 10 + (this.level * 5);
+      this.xpToNext = this.xpToNext + (this.level * 2);
       this.showLevelUp();
     }
   }
@@ -1521,6 +1501,7 @@ export default class GameScene extends Phaser.Scene {
           s.toastLevel++;
           s.toastDmg += 5;
           s.toastCooldown = Math.max(0.3, s.toastCooldown - 0.05);
+          s.updateSkillHUD();
         },
       });
     }
@@ -1803,6 +1784,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   shutdown() {
+    this.game.events.off("blur");
     if (this.blackout) {
       this.blackout.destroy();
     }
@@ -1879,7 +1861,7 @@ export default class GameScene extends Phaser.Scene {
 
     // --- UPDATE FPS ---
     const currentFps = Math.round(this.game.loop.actualFps);
-    this.fpsText.setText(`FPS: ${currentFps} || Enemies: ${this.enemies.countActive()}`);
+    this.fpsText.setText(`FPS: ${currentFps}`);
 
     if (currentFps >= 55) {
       this.fpsText.setColor("#22c55e");

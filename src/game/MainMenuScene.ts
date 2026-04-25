@@ -69,10 +69,10 @@ export class MainMenuScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    this.input.on("pointerdown", () => {
+    this.input.once("pointerdown", () => {
       this.scene.start("GameScene");
     });
-    this.input.keyboard!.on("keydown", () => {
+    this.input.keyboard!.once("keydown", () => {
       this.scene.start("GameScene");
     });
   }
